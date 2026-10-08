@@ -105,7 +105,7 @@ func parseDiff(diff string) []DiffLine {
 				rangeStr := parts[2]
 				rangeStr = strings.TrimPrefix(rangeStr, "+")
 				var start int
-				fmt.Sscanf(rangeStr, "%d", &start)
+				_, _ = fmt.Sscanf(rangeStr, "%d", &start)
 				newLineNum = start - 1
 			}
 			continue
@@ -212,7 +212,7 @@ func parseBlame(output string) []BlameLine {
 			if len(parts) >= 3 {
 				if len(parts[0]) == 40 {
 					currentCommit = parts[0]
-					fmt.Sscanf(parts[2], "%d", &lineNum)
+					_, _ = fmt.Sscanf(parts[2], "%d", &lineNum)
 				}
 			}
 		}
@@ -340,7 +340,7 @@ func parseUnifiedDiff(diff string) (added []int, removed []int, err error) {
 				rangeStr := parts[2]
 				rangeStr = strings.TrimPrefix(rangeStr, "+")
 				var start int
-				fmt.Sscanf(rangeStr, "%d", &start)
+				_, _ = fmt.Sscanf(rangeStr, "%d", &start)
 				newLineNum = start - 1
 			}
 			continue
