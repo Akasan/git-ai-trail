@@ -191,7 +191,9 @@ func TestRootCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
 
 	origDir, _ := os.Getwd()
 	defer func() {
@@ -267,7 +269,7 @@ func TestStdinJSONHookSimulation(t *testing.T) {
 	os.Stdin = r
 	go func() {
 		_, _ = w.Write(jsonBytes)
-		w.Close()
+		_ = w.Close()
 	}()
 
 	err = commands.Mark([]string{"--stdin-json", "--agent", "test-hook", "--quiet"})

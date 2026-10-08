@@ -141,17 +141,70 @@ func computeFileAttribution(commit, path string, snapshots []snapshot.Snapshot) 
 
 func matchLinesWithLCS(snapLines, finalLines []string, threshold float64) map[int]int {
 	matched := make(map[int]int)
-
 	if len(snapLines) == 0 || len(finalLines) == 0 {
 		return matched
 	}
 
-	lcs := computeLCS(snapLines, finalLines, threshold)
-
-	for i := range lcs {
-		if lcs[i][0] >= 0 && lcs[i][1] >= 0 {
-			matched[lcs[i][0]] = lcs[i][1]
+	ids := make(map[string]int)
+	toIDs := func(ls []string) []int {
+		out := make([]int, len(ls))
+		for i, l := range ls {
+			id, ok := ids[l]
+			if !ok {
+				id = len(ids)
+				ids[l] = id
+			}
+			out[i] = id
 		}
+		return out
+	}
+
+	a := toIDs(snapLines)
+	b := toIDs(finalLines)
+	m, n := len(a), len(b)
+
+	dp := make([][]int, m+1)
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+	}
+
+	for i := m - 1; i >= 0; i-- {
+		for j := n - 1; j >= 0; j-- {
+			if a[i] == b[j] {
+				dp[i][j] = dp[i+1][j+1] + 1
+			} else {
+				dp[i][j] = max(dp[i+1][j], dp[i][j+1])
+			}
+		}
+	}
+
+	var anchors [][2]int
+	i, j := 0, 0
+	for i < m && j < n {
+		if a[i] == b[j] {
+			anchors = append(anchors, [2]int{i, j})
+			i++
+			j++
+		} else if i+1 < len(dp) && j+1 < len(dp[0]) && dp[i+1][j] >= dp[i][j+1] {
+			i++
+		} else {
+			j++
+		}
+	}
+	anchors = append(anchors, [2]int{m, n})
+
+	pi, pj := 0, 0
+	for _, an := range anchors {
+		if an[0] > pi && an[1] > pj {
+			fuzzyMatches := computeLCS(snapLines[pi:an[0]], finalLines[pj:an[1]], threshold)
+			for _, p := range fuzzyMatches {
+				matched[p[0]+pi] = p[1] + pj
+			}
+		}
+		if an[0] < m {
+			matched[an[0]] = an[1]
+		}
+		pi, pj = an[0]+1, an[1]+1
 	}
 
 	return matched
@@ -159,27 +212,27 @@ func matchLinesWithLCS(snapLines, finalLines []string, threshold float64) map[in
 
 func computeLCS(a, b []string, threshold float64) [][2]int {
 	m, n := len(a), len(b)
-	
+
 	simCache := make(map[[2]int]float64)
 	getSimilarity := func(i, j int) float64 {
 		key := [2]int{i, j}
 		if sim, ok := simCache[key]; ok {
 			return sim
 		}
-		
+
 		s1, s2 := a[i], b[j]
-		
+
 		if s1 == s2 {
 			simCache[key] = 1.0
 			return 1.0
 		}
-		
+
 		len1, len2 := len(s1), len(s2)
 		if len1 == 0 || len2 == 0 {
 			simCache[key] = 0.0
 			return 0.0
 		}
-		
+
 		lenDiff := len1 - len2
 		if lenDiff < 0 {
 			lenDiff = -lenDiff
@@ -192,12 +245,12 @@ func computeLCS(a, b []string, threshold float64) [][2]int {
 			simCache[key] = 0.0
 			return 0.0
 		}
-		
+
 		sim := levenshteinSimilarity(s1, s2)
 		simCache[key] = sim
 		return sim
 	}
-	
+
 	dp := make([][]int, m+1)
 	for i := range dp {
 		dp[i] = make([]int, n+1)

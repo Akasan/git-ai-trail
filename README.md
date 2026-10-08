@@ -359,6 +359,7 @@ git config ai-trail.fuzzyThreshold
 
 ### Current Limitations
 
+- **Pre-AI human edits**: If you manually edit a file and then run an AI tool on the same file (without committing the manual changes first), those manual edits may be attributed to the AI. **Workaround**: Commit or stash human changes before running AI tools, or use `--stdin-json` hooks that capture only the AI's exact edits (planned: parse hook payload text to attribute only AI-written lines)
 - **Line matching**: Uses Levenshtein similarity (configurable threshold); complex refactoring or moved code blocks may not match perfectly
 - **Single-file focus**: Works best when AI edits are isolated to specific files
 - **Post-hoc matching**: Attribution is computed at commit time, not in real-time

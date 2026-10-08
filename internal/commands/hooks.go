@@ -33,8 +33,12 @@ func InstallHooks(args []string) error {
 
 	if err == nil {
 		if _, err := os.Stat(backupPath); err == nil {
+			backupContent, err := os.ReadFile(backupPath)
+			if err == nil && string(backupContent) != string(existingContent) {
+				return fmt.Errorf("post-commit hook exists and differs from backup; refusing to overwrite.\nPlease manually merge or remove %s", postCommitPath)
+			}
 			fmt.Printf("Backup already exists at: %s\n", backupPath)
-			fmt.Println("Skipping backup to avoid overwriting existing backup.")
+			fmt.Println("Skipping backup (current hook matches backup).")
 		} else {
 			if err := os.Rename(postCommitPath, backupPath); err != nil {
 				return fmt.Errorf("failed to backup existing hook: %w", err)

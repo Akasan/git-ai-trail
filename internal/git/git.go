@@ -38,19 +38,33 @@ func GetRepoRoot() (string, error) {
 }
 
 func GetChangedFiles() ([]string, error) {
-	tracked, err := exec.Command("git", "diff", "--name-only", "HEAD").Output()
+	repoRoot, err := GetRepoRoot()
 	if err != nil {
 		return nil, err
 	}
 
-	untracked, err := exec.Command("git", "ls-files", "--others", "--exclude-standard").Output()
+	trackedCmd := exec.Command("git", "diff", "--name-only", "HEAD")
+	trackedCmd.Dir = repoRoot
+	tracked, err := trackedCmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	untrackedCmd := exec.Command("git", "ls-files", "--others", "--exclude-standard", "--full-name")
+	untrackedCmd.Dir = repoRoot
+	untracked, err := untrackedCmd.Output()
 	if err != nil {
 		return nil, err
 	}
 
 	var files []string
 	if len(tracked) > 0 {
-		files = append(files, strings.Split(strings.TrimSpace(string(tracked)), "\n")...)
+		trackedList := strings.Split(strings.TrimSpace(string(tracked)), "\n")
+		for _, f := range trackedList {
+			if f != "" {
+				files = append(files, f)
+			}
+		}
 	}
 	if len(untracked) > 0 {
 		untrackedList := strings.Split(strings.TrimSpace(string(untracked)), "\n")
