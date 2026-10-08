@@ -215,19 +215,44 @@ func ClearFiles(files []string) error {
 	}
 
 	for _, entry := range snapshots {
-		shouldDelete := false
-		for file := range entry.Snapshot.Files {
+		hasCommittedFiles := false
+		remainingFiles := make(map[string]string)
+
+		for file, content := range entry.Snapshot.Files {
 			if fileSet[file] {
-				shouldDelete = true
-				break
+				hasCommittedFiles = true
+			} else {
+				remainingFiles[file] = content
 			}
 		}
 
-		if shouldDelete {
-			if err := os.Remove(filepath.Join(snapshotDir, entry.Filename)); err != nil {
+		if !hasCommittedFiles {
+			continue
+		}
+
+		snapshotPath := filepath.Join(snapshotDir, entry.Filename)
+
+		if len(remainingFiles) == 0 {
+			if err := os.Remove(snapshotPath); err != nil {
 				if !os.IsNotExist(err) {
 					return err
 				}
+			}
+		} else {
+			entry.Snapshot.Files = remainingFiles
+			data, err := json.MarshalIndent(entry.Snapshot, "", "  ")
+			if err != nil {
+				return err
+			}
+
+			tempFile := snapshotPath + ".tmp"
+			if err := os.WriteFile(tempFile, data, 0644); err != nil {
+				return err
+			}
+
+			if err := os.Rename(tempFile, snapshotPath); err != nil {
+				_ = os.Remove(tempFile)
+				return err
 			}
 		}
 	}

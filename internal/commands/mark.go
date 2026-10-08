@@ -108,26 +108,38 @@ func Mark(args []string) error {
 
 	for _, path := range paths {
 		var absPath string
+		var relPath string
+
 		if filepath.IsAbs(path) {
 			absPath = path
+			relPath, err = filepath.Rel(repoRoot, absPath)
+			if err != nil || strings.HasPrefix(relPath, "..") {
+				if !isQuiet {
+					fmt.Fprintf(os.Stderr, "Warning: %s is outside repository\n", path)
+				}
+				continue
+			}
 		} else {
-			absPath = filepath.Join(cwd, path)
-		}
-
-		absPath, err = filepath.Abs(absPath)
-		if err != nil {
-			if !isQuiet {
-				fmt.Fprintf(os.Stderr, "Warning: failed to resolve %s: %v\n", path, err)
+			if strings.HasPrefix(path, "../") || strings.Contains(path, "/../") {
+				absPath = filepath.Join(cwd, path)
+				absPath, err = filepath.Abs(absPath)
+				if err != nil {
+					if !isQuiet {
+						fmt.Fprintf(os.Stderr, "Warning: failed to resolve %s: %v\n", path, err)
+					}
+					continue
+				}
+				relPath, err = filepath.Rel(repoRoot, absPath)
+				if err != nil || strings.HasPrefix(relPath, "..") {
+					if !isQuiet {
+						fmt.Fprintf(os.Stderr, "Warning: %s is outside repository\n", path)
+					}
+					continue
+				}
+			} else {
+				relPath = path
+				absPath = filepath.Join(repoRoot, relPath)
 			}
-			continue
-		}
-
-		relPath, err := filepath.Rel(repoRoot, absPath)
-		if err != nil || strings.HasPrefix(relPath, "..") {
-			if !isQuiet {
-				fmt.Fprintf(os.Stderr, "Warning: %s is outside repository\n", path)
-			}
-			continue
 		}
 
 		content, err := os.ReadFile(absPath)
