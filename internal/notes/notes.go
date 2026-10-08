@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/user/git-ai-trail/internal/git"
+	"github.com/Akasan/git-ai-trail/internal/git"
 )
 
 const (
@@ -13,10 +13,10 @@ const (
 )
 
 type Attribution struct {
-	SchemaVersion int                    `json:"schema_version"`
-	ToolVersion   string                 `json:"tool_version"`
+	SchemaVersion int                        `json:"schema_version"`
+	ToolVersion   string                     `json:"tool_version"`
 	Files         map[string]FileAttribution `json:"files"`
-	Marks         []MarkInfo             `json:"marks,omitempty"`
+	Marks         []MarkInfo                 `json:"marks,omitempty"`
 }
 
 type FileAttribution struct {
@@ -43,7 +43,7 @@ func Save(commit string, attr Attribution) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return git.AddNote(NotesRef, commit, string(data))
 }
 
@@ -52,12 +52,12 @@ func Load(commit string) (*Attribution, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var attr Attribution
 	if err := json.Unmarshal([]byte(data), &attr); err != nil {
 		return nil, err
 	}
-	
+
 	return &attr, nil
 }
 
@@ -65,18 +65,18 @@ func GetLineKind(attr *Attribution, file string, line int) string {
 	if attr == nil {
 		return "unknown"
 	}
-	
+
 	fileAttr, ok := attr.Files[file]
 	if !ok {
 		return "unknown"
 	}
-	
+
 	for _, r := range fileAttr.Ranges {
 		if line >= r.Start && line <= r.End {
 			return r.Kind
 		}
 	}
-	
+
 	return "unknown"
 }
 
@@ -102,7 +102,7 @@ func FormatStats(ai, aiModified, human int) string {
 	if total == 0 {
 		return "0 lines (0% AI)"
 	}
-	
+
 	aiPercent := float64(ai+aiModified) / float64(total) * 100
 	return fmt.Sprintf("%d lines (%d ai, %d ai-modified, %d human) - %.1f%% AI",
 		total, ai, aiModified, human, aiPercent)

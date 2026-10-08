@@ -1,17 +1,16 @@
 package attribution
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/user/git-ai-trail/internal/git"
-	"github.com/user/git-ai-trail/internal/notes"
-	"github.com/user/git-ai-trail/internal/snapshot"
+	"github.com/Akasan/git-ai-trail/internal/git"
+	"github.com/Akasan/git-ai-trail/internal/notes"
+	"github.com/Akasan/git-ai-trail/internal/snapshot"
 )
 
 const defaultFuzzyThreshold = 0.5
@@ -21,12 +20,12 @@ func getFuzzyThreshold() float64 {
 	if err != nil {
 		return defaultFuzzyThreshold
 	}
-	
+
 	threshold, err := strconv.ParseFloat(thresholdStr, 64)
 	if err != nil || threshold < 0 || threshold > 1 {
 		return defaultFuzzyThreshold
 	}
-	
+
 	return threshold
 }
 
@@ -35,14 +34,16 @@ func Compute(commit string, snapshots []snapshot.Snapshot) (*notes.Attribution, 
 	if err != nil {
 		return nil, err
 	}
-	
+
+	sort.Strings(files)
+
 	attr := &notes.Attribution{
 		SchemaVersion: notes.SchemaVersion,
 		ToolVersion:   "0.1.0",
 		Files:         make(map[string]notes.FileAttribution),
 		Marks:         make([]notes.MarkInfo, 0),
 	}
-	
+
 	for _, snap := range snapshots {
 		attr.Marks = append(attr.Marks, notes.MarkInfo{
 			Timestamp:   snap.Timestamp.Format("2006-01-02T15:04:05Z"),
@@ -52,7 +53,7 @@ func Compute(commit string, snapshots []snapshot.Snapshot) (*notes.Attribution, 
 			PromptShort: snap.PromptShort,
 		})
 	}
-	
+
 	for _, file := range files {
 		fileAttr, err := computeFileAttribution(commit, file, snapshots)
 		if err != nil {
@@ -60,7 +61,7 @@ func Compute(commit string, snapshots []snapshot.Snapshot) (*notes.Attribution, 
 		}
 		attr.Files[file] = fileAttr
 	}
-	
+
 	return attr, nil
 }
 
@@ -69,139 +70,190 @@ func computeFileAttribution(commit, path string, snapshots []snapshot.Snapshot) 
 	if err != nil {
 		return notes.FileAttribution{}, err
 	}
-	
+
+	finalContent = strings.TrimSuffix(finalContent, "\n")
 	finalLines := strings.Split(finalContent, "\n")
-	
+	if len(finalLines) == 1 && finalLines[0] == "" {
+		finalLines = []string{}
+	}
+
+	addedLines, err := git.GetDiffAddedLines(commit, path)
+	if err != nil {
+		return notes.FileAttribution{}, err
+	}
+
 	lineKinds := make([]string, len(finalLines))
 	for i := range lineKinds {
-		lineKinds[i] = "human"
+		if !addedLines[i+1] {
+			lineKinds[i] = "unchanged"
+		} else {
+			lineKinds[i] = "human"
+		}
 	}
-	
-	aiSnapshot := make(map[int]string)
+
+	threshold := getFuzzyThreshold()
+
 	for _, snap := range snapshots {
-		if content, ok := snap.Files[path]; ok {
-			snapLines := strings.Split(content, "\n")
-			
-			matched := matchLines(snapLines, finalLines)
-			for snapLine, finalLine := range matched {
-				if finalLine != -1 {
-					aiSnapshot[finalLine] = snapLines[snapLine]
+		snapContent, ok := snap.Files[path]
+		if !ok {
+			continue
+		}
+
+		snapContent = strings.TrimSuffix(snapContent, "\n")
+		snapLines := strings.Split(snapContent, "\n")
+		if len(snapLines) == 1 && snapLines[0] == "" {
+			snapLines = []string{}
+		}
+
+		matched := matchLinesWithLCS(snapLines, finalLines, threshold)
+
+		for snapIdx, finalIdx := range matched {
+			if finalIdx == -1 || finalIdx >= len(finalLines) {
+				continue
+			}
+
+			if !addedLines[finalIdx+1] {
+				continue
+			}
+
+			snapLine := snapLines[snapIdx]
+			finalLine := finalLines[finalIdx]
+
+			if strings.TrimSpace(snapLine) == strings.TrimSpace(finalLine) {
+				lineKinds[finalIdx] = "ai"
+			} else {
+				similarity := levenshteinSimilarity(snapLine, finalLine)
+				if similarity >= threshold {
+					lineKinds[finalIdx] = "ai-modified"
 				}
 			}
 		}
 	}
-	
-	threshold := getFuzzyThreshold()
-	
-	for lineNum, snapContent := range aiSnapshot {
-		if lineNum >= len(finalLines) {
-			continue
-		}
-		
-		finalLine := finalLines[lineNum]
-		trimmedFinal := strings.TrimSpace(finalLine)
-		trimmedSnap := strings.TrimSpace(snapContent)
-		
-		if trimmedFinal == trimmedSnap {
-			lineKinds[lineNum] = "ai"
-		} else if len(trimmedFinal) > 0 && len(trimmedSnap) > 0 {
-			similarity := calculateSimilarity(trimmedFinal, trimmedSnap)
-			if similarity >= threshold {
-				lineKinds[lineNum] = "ai-modified"
-			}
+
+	for i := range lineKinds {
+		if lineKinds[i] == "unchanged" {
+			lineKinds[i] = "human"
 		}
 	}
-	
+
 	ranges := compressRanges(lineKinds)
-	
+
 	return notes.FileAttribution{
 		Path:   path,
 		Ranges: ranges,
 	}, nil
 }
 
-func calculateSimilarity(s1, s2 string) float64 {
+func matchLinesWithLCS(snapLines, finalLines []string, threshold float64) map[int]int {
+	matched := make(map[int]int)
+
+	if len(snapLines) == 0 || len(finalLines) == 0 {
+		return matched
+	}
+
+	lcs := computeLCS(snapLines, finalLines, threshold)
+
+	for i := range lcs {
+		if lcs[i][0] >= 0 && lcs[i][1] >= 0 {
+			matched[lcs[i][0]] = lcs[i][1]
+		}
+	}
+
+	return matched
+}
+
+func computeLCS(a, b []string, threshold float64) [][2]int {
+	m, n := len(a), len(b)
+	dp := make([][]int, m+1)
+	for i := range dp {
+		dp[i] = make([]int, n+1)
+	}
+
+	for i := 1; i <= m; i++ {
+		for j := 1; j <= n; j++ {
+			sim := levenshteinSimilarity(a[i-1], b[j-1])
+			if sim >= threshold {
+				dp[i][j] = dp[i-1][j-1] + 1
+			} else {
+				dp[i][j] = max(dp[i-1][j], dp[i][j-1])
+			}
+		}
+	}
+
+	var result [][2]int
+	i, j := m, n
+	for i > 0 && j > 0 {
+		if levenshteinSimilarity(a[i-1], b[j-1]) >= threshold {
+			result = append([][2]int{{i - 1, j - 1}}, result...)
+			i--
+			j--
+		} else if dp[i-1][j] > dp[i][j-1] {
+			i--
+		} else {
+			j--
+		}
+	}
+
+	return result
+}
+
+func levenshteinSimilarity(s1, s2 string) float64 {
 	if s1 == s2 {
 		return 1.0
 	}
-	
-	longer := s1
-	shorter := s2
-	if len(s2) > len(s1) {
-		longer = s2
-		shorter = s1
-	}
-	
-	if len(longer) == 0 {
+
+	if len(s1) == 0 || len(s2) == 0 {
 		return 0.0
 	}
-	
-	matches := 0
-	for i := 0; i < len(shorter); i++ {
-		if i < len(longer) && shorter[i] == longer[i] {
-			matches++
-		}
-	}
-	
-	return float64(matches) / float64(len(longer))
+
+	dist := levenshteinDistance(s1, s2)
+	maxLen := max(len(s1), len(s2))
+	return 1.0 - float64(dist)/float64(maxLen)
 }
 
-func matchLines(snapLines, finalLines []string) map[int]int {
-	matched := make(map[int]int)
-	usedFinalLines := make(map[int]bool)
-	threshold := getFuzzyThreshold()
-	
-	for i, snapLine := range snapLines {
-		bestMatch := -1
-		bestSimilarity := 0.0
-		
-		trimmedSnap := strings.TrimSpace(snapLine)
-		if len(trimmedSnap) == 0 {
-			continue
-		}
-		
-		for j, finalLine := range finalLines {
-			if usedFinalLines[j] {
-				continue
-			}
-			
-			trimmedFinal := strings.TrimSpace(finalLine)
-			if len(trimmedFinal) == 0 {
-				continue
-			}
-			
-			if trimmedSnap == trimmedFinal {
-				matched[i] = j
-				usedFinalLines[j] = true
-				bestMatch = -1
-				break
-			}
-			
-			similarity := calculateSimilarity(trimmedSnap, trimmedFinal)
-			if similarity >= threshold && similarity > bestSimilarity {
-				bestSimilarity = similarity
-				bestMatch = j
-			}
-		}
-		
-		if bestMatch != -1 && bestSimilarity >= threshold {
-			matched[i] = bestMatch
-			usedFinalLines[bestMatch] = true
-		}
+func levenshteinDistance(s1, s2 string) int {
+	m, n := len(s1), len(s2)
+	if m == 0 {
+		return n
 	}
-	
-	return matched
+	if n == 0 {
+		return m
+	}
+
+	prev := make([]int, n+1)
+	curr := make([]int, n+1)
+
+	for j := 0; j <= n; j++ {
+		prev[j] = j
+	}
+
+	for i := 1; i <= m; i++ {
+		curr[0] = i
+		for j := 1; j <= n; j++ {
+			cost := 1
+			if s1[i-1] == s2[j-1] {
+				cost = 0
+			}
+			curr[j] = min(
+				min(curr[j-1]+1, prev[j]+1),
+				prev[j-1]+cost,
+			)
+		}
+		prev, curr = curr, prev
+	}
+
+	return prev[n]
 }
 
 func compressRanges(lineKinds []string) []notes.LineRange {
 	if len(lineKinds) == 0 {
 		return []notes.LineRange{}
 	}
-	
+
 	var ranges []notes.LineRange
 	currentKind := lineKinds[0]
 	startLine := 1
-	
+
 	for i := 1; i < len(lineKinds); i++ {
 		if lineKinds[i] != currentKind {
 			ranges = append(ranges, notes.LineRange{
@@ -213,13 +265,13 @@ func compressRanges(lineKinds []string) []notes.LineRange {
 			startLine = i + 1
 		}
 	}
-	
+
 	ranges = append(ranges, notes.LineRange{
 		Start: startLine,
 		End:   len(lineKinds),
 		Kind:  currentKind,
 	})
-	
+
 	return ranges
 }
 
@@ -228,29 +280,30 @@ func ComputeForWorkingTree(repoRoot string) (map[string]FileStats, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	snapshots, err := snapshot.LoadAll()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if len(snapshots) == 0 {
-		return nil, fmt.Errorf("no AI snapshots recorded; run 'git ai-trail mark' first")
+		return nil, fmt.Errorf("no AI snapshots")
 	}
-	
+
 	stats := make(map[string]FileStats)
-	
+	sort.Strings(changedFiles)
+
 	for _, file := range changedFiles {
 		filePath := filepath.Join(repoRoot, file)
 		currentContent, err := os.ReadFile(filePath)
 		if err != nil {
 			continue
 		}
-		
-		fileStats := computeFileStats(file, string(currentContent), snapshots)
+
+		fileStats := computeFileStats(file, string(currentContent), snapshots, repoRoot)
 		stats[file] = fileStats
 	}
-	
+
 	return stats, nil
 }
 
@@ -260,51 +313,81 @@ type FileStats struct {
 	Human      int
 }
 
-func computeFileStats(path, currentContent string, snapshots []snapshot.Snapshot) FileStats {
+func computeFileStats(path, currentContent string, snapshots []snapshot.Snapshot, repoRoot string) FileStats {
+	currentContent = strings.TrimSuffix(currentContent, "\n")
 	currentLines := strings.Split(currentContent, "\n")
-	
+	if len(currentLines) == 1 && currentLines[0] == "" {
+		currentLines = []string{}
+	}
+
+	headContent, err := git.ShowFile("HEAD", path)
+	var addedLines map[int]bool
+	if err == nil {
+		addedLines = computeWorkingTreeAddedLines(string(headContent), currentContent)
+	} else {
+		addedLines = make(map[int]bool)
+		for i := 1; i <= len(currentLines); i++ {
+			addedLines[i] = true
+		}
+	}
+
 	lineKinds := make([]string, len(currentLines))
 	for i := range lineKinds {
-		lineKinds[i] = "human"
+		if !addedLines[i+1] {
+			lineKinds[i] = "unchanged"
+		} else {
+			lineKinds[i] = "human"
+		}
 	}
-	
-	aiSnapshot := make(map[int]string)
+
+	threshold := getFuzzyThreshold()
+
 	for _, snap := range snapshots {
-		if content, ok := snap.Files[path]; ok {
-			snapLines := strings.Split(content, "\n")
-			
-			matched := matchLines(snapLines, currentLines)
-			for snapLine, currentLine := range matched {
-				if currentLine != -1 {
-					aiSnapshot[currentLine] = snapLines[snapLine]
+		snapContent, ok := snap.Files[path]
+		if !ok {
+			continue
+		}
+
+		snapContent = strings.TrimSuffix(snapContent, "\n")
+		snapLines := strings.Split(snapContent, "\n")
+		if len(snapLines) == 1 && snapLines[0] == "" {
+			snapLines = []string{}
+		}
+
+		matched := matchLinesWithLCS(snapLines, currentLines, threshold)
+
+		for snapIdx, currentIdx := range matched {
+			if currentIdx == -1 || currentIdx >= len(currentLines) {
+				continue
+			}
+
+			if !addedLines[currentIdx+1] {
+				continue
+			}
+
+			snapLine := snapLines[snapIdx]
+			currentLine := currentLines[currentIdx]
+
+			if strings.TrimSpace(snapLine) == strings.TrimSpace(currentLine) {
+				lineKinds[currentIdx] = "ai"
+			} else {
+				similarity := levenshteinSimilarity(snapLine, currentLine)
+				if similarity >= threshold {
+					lineKinds[currentIdx] = "ai-modified"
 				}
 			}
 		}
 	}
-	
-	threshold := getFuzzyThreshold()
-	
-	for lineNum, snapContent := range aiSnapshot {
-		if lineNum >= len(currentLines) {
+
+	stats := FileStats{}
+	for i, kind := range lineKinds {
+		if kind == "unchanged" {
 			continue
 		}
-		
-		currentLine := currentLines[lineNum]
-		trimmedCurrent := strings.TrimSpace(currentLine)
-		trimmedSnap := strings.TrimSpace(snapContent)
-		
-		if trimmedCurrent == trimmedSnap {
-			lineKinds[lineNum] = "ai"
-		} else if len(trimmedCurrent) > 0 && len(trimmedSnap) > 0 {
-			similarity := calculateSimilarity(trimmedCurrent, trimmedSnap)
-			if similarity >= threshold {
-				lineKinds[lineNum] = "ai-modified"
-			}
+		if !addedLines[i+1] {
+			continue
 		}
-	}
-	
-	stats := FileStats{}
-	for _, kind := range lineKinds {
+
 		switch kind {
 		case "ai":
 			stats.AI++
@@ -314,37 +397,58 @@ func computeFileStats(path, currentContent string, snapshots []snapshot.Snapshot
 			stats.Human++
 		}
 	}
-	
+
 	return stats
 }
 
-func DiffFiles(oldPath, newPath string) ([]string, error) {
-	cmd := exec.Command("diff", "-u", oldPath, newPath)
-	out, _ := cmd.Output()
-	
-	var added []string
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
-			added = append(added, strings.TrimPrefix(line, "+"))
+func computeWorkingTreeAddedLines(headContent, currentContent string) map[int]bool {
+	headContent = strings.TrimSuffix(headContent, "\n")
+	currentContent = strings.TrimSuffix(currentContent, "\n")
+
+	headLines := strings.Split(headContent, "\n")
+	currentLines := strings.Split(currentContent, "\n")
+
+	if len(headLines) == 1 && headLines[0] == "" {
+		headLines = []string{}
+	}
+	if len(currentLines) == 1 && currentLines[0] == "" {
+		currentLines = []string{}
+	}
+
+	added := make(map[int]bool)
+
+	matched := make(map[int]bool)
+	for _, headLine := range headLines {
+		for j, currentLine := range currentLines {
+			if matched[j] {
+				continue
+			}
+			if headLine == currentLine {
+				matched[j] = true
+				break
+			}
 		}
 	}
-	
-	return added, nil
+
+	for i := 0; i < len(currentLines); i++ {
+		if !matched[i] {
+			added[i+1] = true
+		}
+	}
+
+	return added
 }
 
-func ReadFileLines(path string) ([]string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
+func max(a, b int) int {
+	if a > b {
+		return a
 	}
-	defer file.Close()
-	
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
-	
-	return lines, scanner.Err()
+	return b
 }

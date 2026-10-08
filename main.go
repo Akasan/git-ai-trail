@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/user/git-ai-trail/internal/commands"
+	"github.com/Akasan/git-ai-trail/internal/commands"
 )
 
 const version = "0.1.0"
@@ -36,7 +36,9 @@ func main() {
 		}
 	case "record":
 		if err := commands.Record(args); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			if err.Error() != "" {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			}
 			os.Exit(1)
 		}
 	case "install-hooks":

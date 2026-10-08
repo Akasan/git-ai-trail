@@ -3,6 +3,7 @@ package git
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -37,16 +38,30 @@ func GetRepoRoot() (string, error) {
 }
 
 func GetChangedFiles() ([]string, error) {
-	cmd := exec.Command("git", "diff", "--name-only", "HEAD")
-	out, err := cmd.Output()
+	tracked, err := exec.Command("git", "diff", "--name-only", "HEAD").Output()
 	if err != nil {
 		return nil, err
 	}
-	if len(out) == 0 {
-		return []string{}, nil
+
+	untracked, err := exec.Command("git", "ls-files", "--others", "--exclude-standard").Output()
+	if err != nil {
+		return nil, err
 	}
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	return lines, nil
+
+	var files []string
+	if len(tracked) > 0 {
+		files = append(files, strings.Split(strings.TrimSpace(string(tracked)), "\n")...)
+	}
+	if len(untracked) > 0 {
+		untrackedList := strings.Split(strings.TrimSpace(string(untracked)), "\n")
+		for _, f := range untrackedList {
+			if f != "" {
+				files = append(files, f)
+			}
+		}
+	}
+
+	return files, nil
 }
 
 func GetFileContent(path string, ref string) (string, error) {
@@ -67,80 +82,12 @@ func GetWorkingTreeContent(path string) (string, error) {
 	return string(out), nil
 }
 
-func DiffLines(oldContent, newContent string) ([]DiffLine, error) {
-	oldFile := "/tmp/git-ai-trail-old"
-	newFile := "/tmp/git-ai-trail-new"
-	
-	if err := exec.Command("sh", "-c", fmt.Sprintf("echo %q > %s", oldContent, oldFile)).Run(); err != nil {
-		return nil, err
-	}
-	if err := exec.Command("sh", "-c", fmt.Sprintf("echo %q > %s", newContent, newFile)).Run(); err != nil {
-		return nil, err
-	}
-	
-	cmd := exec.Command("diff", "-u", oldFile, newFile)
-	out, _ := cmd.Output()
-	
-	return parseDiff(string(out)), nil
-}
-
-type DiffLine struct {
-	Type    string
-	LineNum int
-	Content string
-}
-
-func parseDiff(diff string) []DiffLine {
-	var result []DiffLine
-	lines := strings.Split(diff, "\n")
-	newLineNum := 0
-	
-	for i, line := range lines {
-		if i < 2 {
-			continue
-		}
-		if strings.HasPrefix(line, "@@") {
-			parts := strings.Fields(line)
-			if len(parts) >= 3 {
-				rangeStr := parts[2]
-				rangeStr = strings.TrimPrefix(rangeStr, "+")
-				var start int
-				_, _ = fmt.Sscanf(rangeStr, "%d", &start)
-				newLineNum = start - 1
-			}
-			continue
-		}
-		
-		if strings.HasPrefix(line, "+") {
-			newLineNum++
-			result = append(result, DiffLine{
-				Type:    "add",
-				LineNum: newLineNum,
-				Content: strings.TrimPrefix(line, "+"),
-			})
-		} else if strings.HasPrefix(line, "-") {
-			result = append(result, DiffLine{
-				Type:    "del",
-				LineNum: newLineNum,
-				Content: strings.TrimPrefix(line, "-"),
-			})
-		} else if strings.HasPrefix(line, " ") {
-			newLineNum++
-			result = append(result, DiffLine{
-				Type:    "context",
-				LineNum: newLineNum,
-				Content: strings.TrimPrefix(line, " "),
-			})
-		}
-	}
-	
-	return result
-}
 
 func Commit(args []string) error {
 	cmd := exec.Command("git", append([]string{"commit"}, args...)...)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
@@ -163,7 +110,7 @@ func GetNote(ref, commit string) (string, error) {
 }
 
 func GetCommitFiles(commit string) ([]string, error) {
-	cmd := exec.Command("git", "diff-tree", "--no-commit-id", "--name-only", "-r", commit)
+	cmd := exec.Command("git", "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", commit)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -194,13 +141,13 @@ func parseBlame(output string) []BlameLine {
 	lines := strings.Split(output, "\n")
 	var currentCommit string
 	var lineNum int
-	
+
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
 		if len(line) == 0 {
 			continue
 		}
-		
+
 		if strings.HasPrefix(line, "\t") {
 			result = append(result, BlameLine{
 				Commit:  currentCommit,
@@ -217,7 +164,7 @@ func parseBlame(output string) []BlameLine {
 			}
 		}
 	}
-	
+
 	return result
 }
 
@@ -228,7 +175,7 @@ func CommitLog(args []string) ([]CommitInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var commits []CommitInfo
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	for _, line := range lines {
@@ -245,7 +192,7 @@ func CommitLog(args []string) ([]CommitInfo, error) {
 			})
 		}
 	}
-	
+
 	return commits, nil
 }
 
@@ -319,20 +266,20 @@ func DiffWithParent(commit, path string) (added []int, removed []int, err error)
 		out, _ := cmd.Output()
 		return parseUnifiedDiff(string(out))
 	}
-	
+
 	cmd := exec.Command("git", "diff", parent, commit, "--", path)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, nil, err
 	}
-	
+
 	return parseUnifiedDiff(string(out))
 }
 
 func parseUnifiedDiff(diff string) (added []int, removed []int, err error) {
 	lines := strings.Split(diff, "\n")
 	newLineNum := 0
-	
+
 	for _, line := range lines {
 		if strings.HasPrefix(line, "@@") {
 			parts := strings.Fields(line)
@@ -345,7 +292,7 @@ func parseUnifiedDiff(diff string) (added []int, removed []int, err error) {
 			}
 			continue
 		}
-		
+
 		if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
 			newLineNum++
 			added = append(added, newLineNum)
@@ -353,7 +300,7 @@ func parseUnifiedDiff(diff string) (added []int, removed []int, err error) {
 			newLineNum++
 		}
 	}
-	
+
 	return added, removed, nil
 }
 
@@ -371,10 +318,67 @@ func Run(args ...string) (string, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	
+
 	err := cmd.Run()
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", err, stderr.String())
 	}
 	return stdout.String(), nil
+}
+
+func GetShowPrefix() (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--show-prefix")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func GetDiffAddedLines(commit, path string) (map[int]bool, error) {
+	parent, err := GetParentCommit(commit)
+	var cmd *exec.Cmd
+	if err != nil {
+		cmd = exec.Command("git", "show", "--no-patch", "--format=", commit, "--", path)
+	} else {
+		cmd = exec.Command("git", "diff", "-U0", parent, commit, "--", path)
+	}
+
+	out, err := cmd.Output()
+	if err != nil {
+		cmd = exec.Command("git", "show", commit, "--", path)
+		out, err = cmd.Output()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	added := make(map[int]bool)
+	lines := strings.Split(string(out), "\n")
+	var lineNum int
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "@@") {
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				rangeStr := parts[2]
+				rangeStr = strings.TrimPrefix(rangeStr, "+")
+				var start, count int
+				if strings.Contains(rangeStr, ",") {
+					_, _ = fmt.Sscanf(rangeStr, "%d,%d", &start, &count)
+				} else {
+					_, _ = fmt.Sscanf(rangeStr, "%d", &start)
+					count = 1
+				}
+				lineNum = start - 1
+			}
+		} else if strings.HasPrefix(line, "+") && !strings.HasPrefix(line, "+++") {
+			lineNum++
+			added[lineNum] = true
+		} else if !strings.HasPrefix(line, "-") && !strings.HasPrefix(line, "---") && !strings.HasPrefix(line, "@@") {
+			lineNum++
+		}
+	}
+
+	return added, nil
 }
