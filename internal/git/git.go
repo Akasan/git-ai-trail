@@ -266,6 +266,15 @@ func ConfigAdd(key, value string) error {
 	return cmd.Run()
 }
 
+func ConfigGet(key string) (string, error) {
+	cmd := exec.Command("git", "config", "--get", key)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func ShowFile(commit, path string) ([]byte, error) {
 	cmd := exec.Command("git", "show", commit+":"+path)
 	return cmd.Output()

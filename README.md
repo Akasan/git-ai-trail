@@ -251,15 +251,32 @@ git fetch
 
 ## Editor/Agent Integration
 
-### Cursor / Claude Code
+### Cursor
 
-Create a hook that runs after AI edits:
+Add a rule in `.cursorrules` or use the Rules for AI panel:
 
-```bash
-#!/bin/bash
-# .cursor/hooks/post-edit.sh
-git ai-trail mark --agent cursor --model claude-3.5 --quiet
 ```
+After editing files, always run: git ai-trail mark --agent cursor --quiet
+```
+
+Or configure in Cursor's settings (if available) to run a post-edit command.
+
+### Claude Code (Desktop)
+
+Create a `~/.config/claude-code/hooks.json` file with a PostToolUse hook:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": {
+      "Edit": "git ai-trail mark --agent claude-code --quiet",
+      "Write": "git ai-trail mark --agent claude-code --quiet"
+    }
+  }
+}
+```
+
+This automatically marks files after Claude Code's Edit or Write tool usage.
 
 ### GitHub Copilot
 
@@ -276,6 +293,26 @@ Then mark changes before committing:
 git ai-trail mark --agent copilot
 git commit -m "..."
 ```
+
+## Configuration
+
+### Fuzzy Matching Threshold
+
+The tool uses fuzzy matching to detect when AI-generated lines have been lightly edited. You can configure the similarity threshold (0.0 to 1.0, default: 0.5):
+
+```bash
+# Set threshold to 0.6 (60% similarity required for ai-modified detection)
+git config ai-trail.fuzzyThreshold 0.6
+
+# View current setting
+git config ai-trail.fuzzyThreshold
+```
+
+- **1.0**: Only exact matches count as `ai`; any edit becomes `human`
+- **0.5** (default): Lines with ≥50% similarity to AI snapshot marked as `ai-modified`
+- **0.0**: Even completely different lines could be matched (not recommended)
+
+**Example**: If AI writes `function calculateTotal() {` and you edit it to `function calculateTotal(tax) {`, the similarity is ~85%, so it's marked as `ai-modified`.
 
 ## Storage Details
 

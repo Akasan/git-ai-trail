@@ -6,12 +6,29 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/user/git-ai-trail/internal/git"
 	"github.com/user/git-ai-trail/internal/notes"
 	"github.com/user/git-ai-trail/internal/snapshot"
 )
+
+const defaultFuzzyThreshold = 0.5
+
+func getFuzzyThreshold() float64 {
+	thresholdStr, err := git.ConfigGet("ai-trail.fuzzyThreshold")
+	if err != nil {
+		return defaultFuzzyThreshold
+	}
+	
+	threshold, err := strconv.ParseFloat(thresholdStr, 64)
+	if err != nil || threshold < 0 || threshold > 1 {
+		return defaultFuzzyThreshold
+	}
+	
+	return threshold
+}
 
 func Compute(commit string, snapshots []snapshot.Snapshot) (*notes.Attribution, error) {
 	files, err := git.GetCommitFiles(commit)
@@ -74,6 +91,8 @@ func computeFileAttribution(commit, path string, snapshots []snapshot.Snapshot) 
 		}
 	}
 	
+	threshold := getFuzzyThreshold()
+	
 	for lineNum, snapContent := range aiSnapshot {
 		if lineNum >= len(finalLines) {
 			continue
@@ -87,7 +106,7 @@ func computeFileAttribution(commit, path string, snapshots []snapshot.Snapshot) 
 			lineKinds[lineNum] = "ai"
 		} else if len(trimmedFinal) > 0 && len(trimmedSnap) > 0 {
 			similarity := calculateSimilarity(trimmedFinal, trimmedSnap)
-			if similarity > 0.3 {
+			if similarity >= threshold {
 				lineKinds[lineNum] = "ai-modified"
 			}
 		}
@@ -130,6 +149,7 @@ func calculateSimilarity(s1, s2 string) float64 {
 func matchLines(snapLines, finalLines []string) map[int]int {
 	matched := make(map[int]int)
 	usedFinalLines := make(map[int]bool)
+	threshold := getFuzzyThreshold()
 	
 	for i, snapLine := range snapLines {
 		bestMatch := -1
@@ -158,13 +178,13 @@ func matchLines(snapLines, finalLines []string) map[int]int {
 			}
 			
 			similarity := calculateSimilarity(trimmedSnap, trimmedFinal)
-			if similarity > 0.5 && similarity > bestSimilarity {
+			if similarity >= threshold && similarity > bestSimilarity {
 				bestSimilarity = similarity
 				bestMatch = j
 			}
 		}
 		
-		if bestMatch != -1 && bestSimilarity > 0.5 {
+		if bestMatch != -1 && bestSimilarity >= threshold {
 			matched[i] = bestMatch
 			usedFinalLines[bestMatch] = true
 		}
@@ -262,6 +282,8 @@ func computeFileStats(path, currentContent string, snapshots []snapshot.Snapshot
 		}
 	}
 	
+	threshold := getFuzzyThreshold()
+	
 	for lineNum, snapContent := range aiSnapshot {
 		if lineNum >= len(currentLines) {
 			continue
@@ -275,7 +297,7 @@ func computeFileStats(path, currentContent string, snapshots []snapshot.Snapshot
 			lineKinds[lineNum] = "ai"
 		} else if len(trimmedCurrent) > 0 && len(trimmedSnap) > 0 {
 			similarity := calculateSimilarity(trimmedCurrent, trimmedSnap)
-			if similarity > 0.3 {
+			if similarity >= threshold {
 				lineKinds[lineNum] = "ai-modified"
 			}
 		}

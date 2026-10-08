@@ -251,15 +251,32 @@ git fetch
 
 ## エディタ/エージェント統合
 
-### Cursor / Claude Code
+### Cursor
 
-AI編集後に実行されるフックを作成:
+`.cursorrules`にルールを追加するか、Rules for AIパネルを使用します:
 
-```bash
-#!/bin/bash
-# .cursor/hooks/post-edit.sh
-git ai-trail mark --agent cursor --model claude-3.5 --quiet
 ```
+ファイル編集後は常に実行: git ai-trail mark --agent cursor --quiet
+```
+
+または、Cursorの設定で（利用可能な場合）post-editコマンドを設定します。
+
+### Claude Code (デスクトップ版)
+
+`~/.config/claude-code/hooks.json`ファイルにPostToolUseフックを作成:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": {
+      "Edit": "git ai-trail mark --agent claude-code --quiet",
+      "Write": "git ai-trail mark --agent claude-code --quiet"
+    }
+  }
+}
+```
+
+これにより、Claude CodeのEditまたはWriteツール使用後に自動的にファイルがマークされます。
 
 ### GitHub Copilot
 
@@ -276,6 +293,26 @@ git ai-trail install-hooks
 git ai-trail mark --agent copilot
 git commit -m "..."
 ```
+
+## 設定
+
+### ファジーマッチング閾値
+
+ツールはファジーマッチングを使用して、AI生成行が軽く編集されたことを検出します。類似度の閾値（0.0〜1.0、デフォルト: 0.5）を設定できます:
+
+```bash
+# 閾値を0.6に設定（ai-modified検出に60%の類似度が必要）
+git config ai-trail.fuzzyThreshold 0.6
+
+# 現在の設定を表示
+git config ai-trail.fuzzyThreshold
+```
+
+- **1.0**: 完全一致のみ`ai`とカウント。編集があれば`human`になる
+- **0.5**（デフォルト）: AIスナップショットとの類似度≥50%の行は`ai-modified`としてマーク
+- **0.0**: 完全に異なる行でもマッチする可能性（非推奨）
+
+**例**: AIが`function calculateTotal() {`と書き、あなたが`function calculateTotal(tax) {`に編集した場合、類似度は約85%なので`ai-modified`としてマークされます。
 
 ## ストレージの詳細
 

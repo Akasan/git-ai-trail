@@ -63,8 +63,7 @@ func Init(args []string) error {
 	}
 	
 	fetchSpec := "+refs/notes/ai-trail:refs/notes/ai-trail"
-	if err := git.ConfigAdd("remote.origin.fetch", fetchSpec); err != nil {
-	}
+	_ = git.ConfigAdd("remote.origin.fetch", fetchSpec)
 	
 	fmt.Println("Initialized git-ai-trail for this repository")
 	fmt.Println()

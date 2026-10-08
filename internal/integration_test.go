@@ -13,21 +13,42 @@ import (
 	"github.com/user/git-ai-trail/internal/snapshot"
 )
 
-func TestEndToEndFlow(t *testing.T) {
+func setupTestRepo(t *testing.T) (string, func()) {
 	tmpDir, err := os.MkdirTemp("", "git-ai-trail-test-*")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
 	
 	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
+	cleanup := func() {
+		_ = os.Chdir(origDir)
+		_ = os.RemoveAll(tmpDir)
+	}
 	
-	os.Chdir(tmpDir)
+	if err := os.Chdir(tmpDir); err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
 	
-	exec.Command("git", "init").Run()
-	exec.Command("git", "config", "user.name", "Test User").Run()
-	exec.Command("git", "config", "user.email", "test@example.com").Run()
+	if err := exec.Command("git", "init").Run(); err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "config", "user.name", "Test User").Run(); err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "config", "user.email", "test@example.com").Run(); err != nil {
+		cleanup()
+		t.Fatal(err)
+	}
+	
+	return tmpDir, cleanup
+}
+
+func TestEndToEndFlow(t *testing.T) {
+	tmpDir, cleanup := setupTestRepo(t)
+	defer cleanup()
 	
 	testFile := filepath.Join(tmpDir, "test.go")
 	initialContent := `package main
@@ -36,9 +57,15 @@ func main() {
 	println("hello")
 }
 `
-	os.WriteFile(testFile, []byte(initialContent), 0644)
-	exec.Command("git", "add", "test.go").Run()
-	exec.Command("git", "commit", "-m", "Initial commit").Run()
+	if err := os.WriteFile(testFile, []byte(initialContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "add", "test.go").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "commit", "-m", "Initial commit").Run(); err != nil {
+		t.Fatal(err)
+	}
 	
 	aiContent := `package main
 
@@ -47,9 +74,11 @@ func main() {
 	println("world")
 }
 `
-	os.WriteFile(testFile, []byte(aiContent), 0644)
+	if err := os.WriteFile(testFile, []byte(aiContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 	
-	err = commands.Mark([]string{"--model", "gpt-4", "--agent", "test", "test.go"})
+	err := commands.Mark([]string{"--model", "gpt-4", "--agent", "test", "test.go"})
 	if err != nil {
 		t.Fatalf("Mark failed: %v", err)
 	}
@@ -67,7 +96,9 @@ func main() {
 		t.Errorf("Expected model gpt-4, got %s", snapshots[0].Model)
 	}
 	
-	exec.Command("git", "add", "test.go").Run()
+	if err := exec.Command("git", "add", "test.go").Run(); err != nil {
+		t.Fatal(err)
+	}
 	err = commands.Commit([]string{"-m", "Add AI code"})
 	if err != nil {
 		t.Fatalf("Commit failed: %v", err)
@@ -104,38 +135,38 @@ func main() {
 }
 
 func TestAIModifiedFlow(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "git-ai-trail-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-	
-	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	
-	os.Chdir(tmpDir)
-	
-	exec.Command("git", "init").Run()
-	exec.Command("git", "config", "user.name", "Test User").Run()
-	exec.Command("git", "config", "user.email", "test@example.com").Run()
+	tmpDir, cleanup := setupTestRepo(t)
+	defer cleanup()
 	
 	testFile := filepath.Join(tmpDir, "test.txt")
-	os.WriteFile(testFile, []byte("line1\n"), 0644)
-	exec.Command("git", "add", "test.txt").Run()
-	exec.Command("git", "commit", "-m", "Initial commit").Run()
+	if err := os.WriteFile(testFile, []byte("line1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "add", "test.txt").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "commit", "-m", "Initial commit").Run(); err != nil {
+		t.Fatal(err)
+	}
 	
 	aiContent := "line1\nline2\nline3\n"
-	os.WriteFile(testFile, []byte(aiContent), 0644)
+	if err := os.WriteFile(testFile, []byte(aiContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 	
-	err = commands.Mark([]string{"test.txt"})
+	err := commands.Mark([]string{"test.txt"})
 	if err != nil {
 		t.Fatalf("Mark failed: %v", err)
 	}
 	
 	modifiedContent := "line1\nline2 modified\nline3\n"
-	os.WriteFile(testFile, []byte(modifiedContent), 0644)
+	if err := os.WriteFile(testFile, []byte(modifiedContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 	
-	exec.Command("git", "add", "test.txt").Run()
+	if err := exec.Command("git", "add", "test.txt").Run(); err != nil {
+		t.Fatal(err)
+	}
 	err = commands.Commit([]string{"-m", "Add modified AI code"})
 	if err != nil {
 		t.Fatalf("Commit failed: %v", err)
@@ -160,36 +191,34 @@ func TestAIModifiedFlow(t *testing.T) {
 }
 
 func TestMultipleMarks(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "git-ai-trail-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-	
-	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	
-	os.Chdir(tmpDir)
-	
-	exec.Command("git", "init").Run()
-	exec.Command("git", "config", "user.name", "Test User").Run()
-	exec.Command("git", "config", "user.email", "test@example.com").Run()
+	tmpDir, cleanup := setupTestRepo(t)
+	defer cleanup()
 	
 	testFile := filepath.Join(tmpDir, "test.txt")
-	os.WriteFile(testFile, []byte("line1\n"), 0644)
-	exec.Command("git", "add", "test.txt").Run()
-	exec.Command("git", "commit", "-m", "Initial commit").Run()
+	if err := os.WriteFile(testFile, []byte("line1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "add", "test.txt").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "commit", "-m", "Initial commit").Run(); err != nil {
+		t.Fatal(err)
+	}
 	
 	content1 := "line1\nline2\n"
-	os.WriteFile(testFile, []byte(content1), 0644)
+	if err := os.WriteFile(testFile, []byte(content1), 0644); err != nil {
+		t.Fatal(err)
+	}
 	
-	err = commands.Mark([]string{"--model", "gpt-3.5", "test.txt"})
+	err := commands.Mark([]string{"--model", "gpt-3.5", "test.txt"})
 	if err != nil {
 		t.Fatalf("First mark failed: %v", err)
 	}
 	
 	content2 := "line1\nline2\nline3\n"
-	os.WriteFile(testFile, []byte(content2), 0644)
+	if err := os.WriteFile(testFile, []byte(content2), 0644); err != nil {
+		t.Fatal(err)
+	}
 	
 	err = commands.Mark([]string{"--model", "gpt-4", "test.txt"})
 	if err != nil {
@@ -205,7 +234,9 @@ func TestMultipleMarks(t *testing.T) {
 		t.Fatalf("Expected 2 snapshots, got %d", len(snapshots))
 	}
 	
-	exec.Command("git", "add", "test.txt").Run()
+	if err := exec.Command("git", "add", "test.txt").Run(); err != nil {
+		t.Fatal(err)
+	}
 	err = commands.Commit([]string{"-m", "Multiple AI marks"})
 	if err != nil {
 		t.Fatalf("Commit failed: %v", err)
@@ -227,36 +258,36 @@ func TestMultipleMarks(t *testing.T) {
 }
 
 func TestRecordCommand(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "git-ai-trail-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-	
-	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	
-	os.Chdir(tmpDir)
-	
-	exec.Command("git", "init").Run()
-	exec.Command("git", "config", "user.name", "Test User").Run()
-	exec.Command("git", "config", "user.email", "test@example.com").Run()
+	tmpDir, cleanup := setupTestRepo(t)
+	defer cleanup()
 	
 	testFile := filepath.Join(tmpDir, "test.txt")
-	os.WriteFile(testFile, []byte("line1\n"), 0644)
-	exec.Command("git", "add", "test.txt").Run()
-	exec.Command("git", "commit", "-m", "Initial commit").Run()
+	if err := os.WriteFile(testFile, []byte("line1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "add", "test.txt").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "commit", "-m", "Initial commit").Run(); err != nil {
+		t.Fatal(err)
+	}
 	
 	aiContent := "line1\nline2\n"
-	os.WriteFile(testFile, []byte(aiContent), 0644)
+	if err := os.WriteFile(testFile, []byte(aiContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 	
-	err = commands.Mark([]string{"test.txt"})
+	err := commands.Mark([]string{"test.txt"})
 	if err != nil {
 		t.Fatalf("Mark failed: %v", err)
 	}
 	
-	exec.Command("git", "add", "test.txt").Run()
-	exec.Command("git", "commit", "-m", "Regular commit").Run()
+	if err := exec.Command("git", "add", "test.txt").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "commit", "-m", "Regular commit").Run(); err != nil {
+		t.Fatal(err)
+	}
 	
 	err = commands.Record([]string{})
 	if err != nil {
@@ -279,30 +310,26 @@ func TestRecordCommand(t *testing.T) {
 }
 
 func TestStatusCommand(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "git-ai-trail-test-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-	
-	origDir, _ := os.Getwd()
-	defer os.Chdir(origDir)
-	
-	os.Chdir(tmpDir)
-	
-	exec.Command("git", "init").Run()
-	exec.Command("git", "config", "user.name", "Test User").Run()
-	exec.Command("git", "config", "user.email", "test@example.com").Run()
+	tmpDir, cleanup := setupTestRepo(t)
+	defer cleanup()
 	
 	testFile := filepath.Join(tmpDir, "test.txt")
-	os.WriteFile(testFile, []byte("line1\n"), 0644)
-	exec.Command("git", "add", "test.txt").Run()
-	exec.Command("git", "commit", "-m", "Initial commit").Run()
+	if err := os.WriteFile(testFile, []byte("line1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "add", "test.txt").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "commit", "-m", "Initial commit").Run(); err != nil {
+		t.Fatal(err)
+	}
 	
 	aiContent := "line1\nline2\nline3\n"
-	os.WriteFile(testFile, []byte(aiContent), 0644)
+	if err := os.WriteFile(testFile, []byte(aiContent), 0644); err != nil {
+		t.Fatal(err)
+	}
 	
-	err = commands.Mark([]string{"test.txt"})
+	err := commands.Mark([]string{"test.txt"})
 	if err != nil {
 		t.Fatalf("Mark failed: %v", err)
 	}
@@ -314,4 +341,65 @@ func TestStatusCommand(t *testing.T) {
 		}
 		t.Fatalf("Status failed: %v", err)
 	}
+}
+
+func TestFuzzyMatchingThreshold(t *testing.T) {
+	tmpDir, cleanup := setupTestRepo(t)
+	defer cleanup()
+	
+	testFile := filepath.Join(tmpDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("original line\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "add", "test.txt").Run(); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec.Command("git", "commit", "-m", "Initial commit").Run(); err != nil {
+		t.Fatal(err)
+	}
+	
+	aiContent := "original line\nAI generated line\nAnother AI line\n"
+	if err := os.WriteFile(testFile, []byte(aiContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	
+	err := commands.Mark([]string{"test.txt"})
+	if err != nil {
+		t.Fatalf("Mark failed: %v", err)
+	}
+	
+	modifiedContent := "original line\nAI generated line modified\nCompletely different human line\n"
+	if err := os.WriteFile(testFile, []byte(modifiedContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	
+	if err := exec.Command("git", "add", "test.txt").Run(); err != nil {
+		t.Fatal(err)
+	}
+	err = commands.Commit([]string{"-m", "Test fuzzy matching"})
+	if err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
+	
+	commit, err := git.GetLastCommit()
+	if err != nil {
+		t.Fatalf("GetLastCommit failed: %v", err)
+	}
+	
+	attr, err := notes.Load(commit)
+	if err != nil {
+		t.Fatalf("Load attribution failed: %v", err)
+	}
+	
+	ai, aiMod, human := notes.ComputeStats(attr)
+	
+	if aiMod == 0 {
+		t.Error("Expected lightly edited AI line to be marked as ai-modified")
+	}
+	
+	if human == 0 {
+		t.Error("Expected unrelated human line to be marked as human")
+	}
+	
+	t.Logf("Fuzzy matching test: %d ai, %d ai-modified, %d human", ai, aiMod, human)
 }

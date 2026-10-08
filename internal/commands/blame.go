@@ -35,7 +35,7 @@ func Blame(args []string) error {
 		
 		kind := notes.GetLineKind(attr, file, line.LineNum)
 		
-		kindLabel := "?"
+		var kindLabel string
 		switch kind {
 		case "ai":
 			kindLabel = "AI"
