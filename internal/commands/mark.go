@@ -72,15 +72,18 @@ func Mark(args []string) error {
 		}
 	}
 
+	var userProvidedPaths bool
 	if len(paths) == 0 {
 		if fs.NArg() > 0 {
 			paths = fs.Args()
+			userProvidedPaths = true
 		} else {
 			changedFiles, err := git.GetChangedFiles()
 			if err != nil {
 				return err
 			}
 			paths = changedFiles
+			userProvidedPaths = false
 		}
 	}
 
@@ -120,7 +123,7 @@ func Mark(args []string) error {
 				continue
 			}
 		} else {
-			if strings.HasPrefix(path, "../") || strings.Contains(path, "/../") {
+			if userProvidedPaths {
 				absPath = filepath.Join(cwd, path)
 				absPath, err = filepath.Abs(absPath)
 				if err != nil {
