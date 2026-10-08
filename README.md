@@ -16,13 +16,13 @@ In the AI era, it's increasingly important to:
 ## Installation
 
 ```bash
-go install github.com/user/git-ai-trail@latest
+go install github.com/Akasan/git-ai-trail@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/user/git-ai-trail
+git clone https://github.com/Akasan/git-ai-trail
 cd git-ai-trail
 go build -o git-ai-trail
 sudo mv git-ai-trail /usr/local/bin/
@@ -226,9 +226,11 @@ Attribution data is stored as JSON in git notes under `refs/notes/ai-trail`.
 ```
 
 **Line kinds:**
-- `ai`: AI-generated, unchanged in final commit
-- `ai-modified`: AI-generated, then edited by human
-- `human`: Human-written (not in any AI snapshot)
+- `ai`: AI-generated line added in this commit, unchanged
+- `ai-modified`: AI-generated line added in this commit, then edited by human
+- `human`: Human-written line added in this commit, or pre-existing line (not attributed to AI)
+
+**Important**: Only lines added or changed in the commit (vs parent) are classified. Pre-existing unchanged lines are not counted.
 
 ## Sharing with Your Team
 
@@ -272,10 +274,12 @@ Cursor supports hooks via `.cursor/hooks.json` (project) or `~/.cursor/hooks.jso
 **`.cursor/hooks/mark-ai-changes.sh`:**
 ```bash
 #!/bin/bash
-git ai-trail mark --quiet --agent cursor
+git ai-trail mark --stdin-json --quiet --agent cursor
 ```
 
 Make it executable: `chmod +x .cursor/hooks/mark-ai-changes.sh`
+
+The hook receives JSON on stdin with `file_path`, which `--stdin-json` reads to capture the edited file (including new files).
 
 Reference: [Cursor Hooks Documentation](https://cursor.com/docs/hooks)
 
@@ -293,7 +297,7 @@ Claude Code supports hooks via `.claude/settings.json` (project) or `~/.claude/s
         "hooks": [
           {
             "type": "command",
-            "command": "git ai-trail mark --quiet --agent claude-code"
+            "command": "git ai-trail mark --stdin-json --quiet --agent claude-code"
           }
         ]
       }
@@ -302,7 +306,7 @@ Claude Code supports hooks via `.claude/settings.json` (project) or `~/.claude/s
 }
 ```
 
-The `matcher` filters to file-editing tools only. The hook receives event JSON on stdin.
+The `matcher` filters to file-editing tools only. The hook receives event JSON on stdin with `tool_input.file_path`, which `--stdin-json` reads to capture the edited file (including newly created files from `Write`).
 
 Reference: [Claude Code Hooks Documentation](https://code.claude.com/docs/en/hooks)
 
@@ -354,10 +358,11 @@ git config ai-trail.fuzzyThreshold
 
 ### Current Limitations
 
-- **Line matching**: Simple exact-match algorithm; doesn't handle complex refactoring or moved code blocks
+- **Line matching**: Uses Levenshtein similarity (configurable threshold); complex refactoring or moved code blocks may not match perfectly
 - **Single-file focus**: Works best when AI edits are isolated to specific files
 - **Post-hoc matching**: Attribution is computed at commit time, not in real-time
 - **Manual marking**: Requires explicit `git ai-trail mark` calls (though hooks can automate this)
+- **LCS-based alignment**: May mismatch when many duplicate lines exist in a file
 
 ### Roadmap
 
@@ -366,8 +371,8 @@ git config ai-trail.fuzzyThreshold
   # Future feature
   git ai-trail verify <commit> --explanation "I reviewed the OAuth flow and..."
   ```
-- [ ] **Fuzzy line matching**: Better handling of reformatted/moved code
-- [ ] **IDE plugins**: Native Cursor, VS Code, IntelliJ integration
+- [ ] **Improved matching**: Better handling of moved/refactored code blocks
+- [ ] **IDE plugins**: Native VS Code, IntelliJ integration
 - [ ] **Merge conflict resolution**: Smart attribution merging
 - [ ] **Anonymous mode**: Track AI usage without storing prompts/models
 - [ ] **Attribution diffs**: `git diff` integration showing AI-touched lines
@@ -387,7 +392,7 @@ MIT License - see [LICENSE](LICENSE)
 A: Yes! As long as you call `git ai-trail mark` after AI edits, it works with any editor or agent.
 
 **Q: What if I forget to mark AI changes?**
-A: Those lines will be attributed as "human". For safety, install the post-commit hook which will warn you.
+A: Those lines will be attributed as "human". For safety, install the post-commit hook, and use editor hooks (Cursor, Claude Code) to mark automatically.
 
 **Q: Does this slow down commits?**
 A: Minimal impact - typically <100ms. The `mark` command is designed to be fast for hook usage.

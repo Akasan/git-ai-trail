@@ -16,13 +16,13 @@ AI時代において、以下のことがますます重要になっています
 ## インストール
 
 ```bash
-go install github.com/user/git-ai-trail@latest
+go install github.com/Akasan/git-ai-trail@latest
 ```
 
 またはソースからビルド:
 
 ```bash
-git clone https://github.com/user/git-ai-trail
+git clone https://github.com/Akasan/git-ai-trail
 cd git-ai-trail
 go build -o git-ai-trail
 sudo mv git-ai-trail /usr/local/bin/
@@ -226,9 +226,11 @@ git ai-trail init
 ```
 
 **行の種類:**
-- `ai`: AI生成、最終コミットで変更なし
-- `ai-modified`: AI生成、その後人間が編集
-- `human`: 人間が作成（AIスナップショットにない）
+- `ai`: このコミットで追加されたAI生成行、変更なし
+- `ai-modified`: このコミットで追加されたAI生成行、その後人間が編集
+- `human`: このコミットで追加された人間作成行、または既存行（AIには帰属されない）
+
+**重要**: コミット（対親コミット）で追加または変更された行のみが分類されます。既存の変更されていない行はカウントされません。
 
 ## チームとの共有
 
@@ -272,10 +274,12 @@ Cursorは `.cursor/hooks.json`（プロジェクト）または `~/.cursor/hooks
 **`.cursor/hooks/mark-ai-changes.sh`:**
 ```bash
 #!/bin/bash
-git ai-trail mark --quiet --agent cursor
+git ai-trail mark --stdin-json --quiet --agent cursor
 ```
 
 実行可能にする: `chmod +x .cursor/hooks/mark-ai-changes.sh`
+
+フックはstdinでJSONを受け取り、`file_path`が含まれます。`--stdin-json`はこれを読み取って編集されたファイル（新規ファイルを含む）をキャプチャします。
 
 参考: [Cursor Hooks ドキュメント](https://cursor.com/docs/hooks)
 
@@ -293,7 +297,7 @@ Claude Codeは `.claude/settings.json`（プロジェクト）または `~/.clau
         "hooks": [
           {
             "type": "command",
-            "command": "git ai-trail mark --quiet --agent claude-code"
+            "command": "git ai-trail mark --stdin-json --quiet --agent claude-code"
           }
         ]
       }
@@ -302,7 +306,7 @@ Claude Codeは `.claude/settings.json`（プロジェクト）または `~/.clau
 }
 ```
 
-`matcher` はファイル編集ツールのみをフィルタします。フックはstdinでイベントJSONを受け取ります。
+`matcher` はファイル編集ツールのみをフィルタします。フックはstdinで`tool_input.file_path`を含むイベントJSONを受け取り、`--stdin-json`はこれを読み取って編集されたファイル（`Write`で新規作成されたファイルを含む）をキャプチャします。
 
 参考: [Claude Code Hooks ドキュメント](https://code.claude.com/docs/en/hooks)
 
@@ -354,10 +358,11 @@ git config ai-trail.fuzzyThreshold
 
 ### 現在の制限
 
-- **行マッチング**: シンプルな完全一致アルゴリズム。複雑なリファクタリングや移動されたコードブロックには対応していません
+- **行マッチング**: Levenshtein類似度を使用（閾値設定可能）; 複雑なリファクタリングや移動されたコードブロックは完全には一致しない場合があります
 - **単一ファイルフォーカス**: AI編集が特定のファイルに分離されている場合に最適に機能します
 - **事後マッチング**: 帰属はコミット時に計算され、リアルタイムではありません
 - **手動マーキング**: 明示的な`git ai-trail mark`呼び出しが必要（ただしフックで自動化可能）
+- **LCSベースのアライメント**: ファイル内に多くの重複行がある場合、誤一致する可能性があります
 
 ### ロードマップ
 
@@ -387,7 +392,7 @@ MITライセンス - [LICENSE](LICENSE)を参照
 A: はい！AI編集後に`git ai-trail mark`を呼び出す限り、どのエディタやエージェントでも動作します。
 
 **Q: AI変更をマークし忘れたらどうなりますか？**
-A: それらの行は「human」として帰属されます。安全のため、post-commitフックをインストールすると警告が表示されます。
+A: それらの行は「human」として帰属されます。安全のため、post-commitフックをインストールし、エディタフック（Cursor、Claude Code）を使用して自動的にマークします。
 
 **Q: これはコミットを遅くしますか？**
 A: 影響は最小限 - 通常<100ms。`mark`コマンドはフック使用のために高速に設計されています。
