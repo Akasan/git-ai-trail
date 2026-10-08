@@ -31,6 +31,27 @@ func Record(args []string) error {
 		return err
 	}
 
+	committedFiles, err := git.GetCommitFiles(resolvedCommit)
+	if err != nil {
+		return fmt.Errorf("failed to get commit files: %w", err)
+	}
+
+	inCommit := make(map[string]bool, len(committedFiles))
+	for _, f := range committedFiles {
+		inCommit[f] = true
+	}
+
+	var relevant []snapshot.Snapshot
+	for _, s := range snapshots {
+		for f := range s.Files {
+			if inCommit[f] {
+				relevant = append(relevant, s)
+				break
+			}
+		}
+	}
+	snapshots = relevant
+
 	if len(snapshots) == 0 {
 		return nil
 	}
@@ -46,11 +67,6 @@ func Record(args []string) error {
 
 	ai, aiMod, human := notes.ComputeStats(attr)
 	fmt.Printf("Attribution recorded for %s: %s\n", resolvedCommit[:7], notes.FormatStats(ai, aiMod, human))
-
-	committedFiles, err := git.GetCommitFiles(resolvedCommit)
-	if err != nil {
-		return fmt.Errorf("failed to get commit files: %w", err)
-	}
 
 	if err := snapshot.ClearFiles(committedFiles); err != nil {
 		return fmt.Errorf("failed to clear snapshots: %w", err)
