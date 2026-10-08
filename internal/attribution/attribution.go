@@ -159,6 +159,45 @@ func matchLinesWithLCS(snapLines, finalLines []string, threshold float64) map[in
 
 func computeLCS(a, b []string, threshold float64) [][2]int {
 	m, n := len(a), len(b)
+	
+	simCache := make(map[[2]int]float64)
+	getSimilarity := func(i, j int) float64 {
+		key := [2]int{i, j}
+		if sim, ok := simCache[key]; ok {
+			return sim
+		}
+		
+		s1, s2 := a[i], b[j]
+		
+		if s1 == s2 {
+			simCache[key] = 1.0
+			return 1.0
+		}
+		
+		len1, len2 := len(s1), len(s2)
+		if len1 == 0 || len2 == 0 {
+			simCache[key] = 0.0
+			return 0.0
+		}
+		
+		lenDiff := len1 - len2
+		if lenDiff < 0 {
+			lenDiff = -lenDiff
+		}
+		maxLen := len1
+		if len2 > maxLen {
+			maxLen = len2
+		}
+		if float64(lenDiff)/float64(maxLen) > (1.0 - threshold) {
+			simCache[key] = 0.0
+			return 0.0
+		}
+		
+		sim := levenshteinSimilarity(s1, s2)
+		simCache[key] = sim
+		return sim
+	}
+	
 	dp := make([][]int, m+1)
 	for i := range dp {
 		dp[i] = make([]int, n+1)
@@ -166,7 +205,7 @@ func computeLCS(a, b []string, threshold float64) [][2]int {
 
 	for i := 1; i <= m; i++ {
 		for j := 1; j <= n; j++ {
-			sim := levenshteinSimilarity(a[i-1], b[j-1])
+			sim := getSimilarity(i-1, j-1)
 			if sim >= threshold {
 				dp[i][j] = dp[i-1][j-1] + 1
 			} else {
@@ -178,7 +217,7 @@ func computeLCS(a, b []string, threshold float64) [][2]int {
 	var result [][2]int
 	i, j := m, n
 	for i > 0 && j > 0 {
-		if levenshteinSimilarity(a[i-1], b[j-1]) >= threshold {
+		if getSimilarity(i-1, j-1) >= threshold {
 			result = append([][2]int{{i - 1, j - 1}}, result...)
 			i--
 			j--
