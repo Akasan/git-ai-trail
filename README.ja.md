@@ -253,46 +253,75 @@ git fetch
 
 ### Cursor
 
-`.cursorrules`にルールを追加するか、Rules for AIパネルを使用します:
+Cursorは `.cursor/hooks.json`（プロジェクト）または `~/.cursor/hooks.json`（ユーザー）でフックをサポートします。`afterFileEdit` フックはエージェントがファイルを編集した後に実行されます。
 
-```
-ファイル編集後は常に実行: git ai-trail mark --agent cursor --quiet
-```
-
-または、Cursorの設定で（利用可能な場合）post-editコマンドを設定します。
-
-### Claude Code (デスクトップ版)
-
-`~/.config/claude-code/hooks.json`ファイルにPostToolUseフックを作成:
-
+**`.cursor/hooks.json`:**
 ```json
 {
+  "version": 1,
   "hooks": {
-    "PostToolUse": {
-      "Edit": "git ai-trail mark --agent claude-code --quiet",
-      "Write": "git ai-trail mark --agent claude-code --quiet"
-    }
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/mark-ai-changes.sh"
+      }
+    ]
   }
 }
 ```
 
-これにより、Claude CodeのEditまたはWriteツール使用後に自動的にファイルがマークされます。
-
-### GitHub Copilot
-
-コミットフックとしてインストール:
-
+**`.cursor/hooks/mark-ai-changes.sh`:**
 ```bash
-git ai-trail install-hooks
+#!/bin/bash
+git ai-trail mark --quiet --agent cursor
 ```
 
-その後、コミット前に変更をマーク:
+実行可能にする: `chmod +x .cursor/hooks/mark-ai-changes.sh`
 
-```bash
-# Copilot使用後
-git ai-trail mark --agent copilot
-git commit -m "..."
+参考: [Cursor Hooks ドキュメント](https://cursor.com/docs/hooks)
+
+### Claude Code (CLI)
+
+Claude Codeは `.claude/settings.json`（プロジェクト）または `~/.claude/settings.json`（ユーザー）でフックをサポートします。`PostToolUse` フックはツール実行後に実行されます。
+
+**`.claude/settings.json`:**
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git ai-trail mark --quiet --agent claude-code"
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
+
+`matcher` はファイル編集ツールのみをフィルタします。フックはstdinでイベントJSONを受け取ります。
+
+参考: [Claude Code Hooks ドキュメント](https://code.claude.com/docs/en/hooks)
+
+### GitHub Copilot (手動ワークフロー)
+
+GitHub Copilot（IDE拡張機能）は自動的な編集後フックをサポートしていません。手動ワークフローを使用します:
+
+1. post-commitフックをインストール:
+   ```bash
+   git ai-trail install-hooks
+   ```
+
+2. Copilot使用後、コミット前に変更をマーク:
+   ```bash
+   git ai-trail mark --agent copilot
+   git commit -m "..."
+   ```
+
+**注**: GitHub Copilot CLIは `.github/hooks/copilot-cli-policy.json` でフックをサポートしていますが、これはCLIツールのみに適用され、IDE拡張機能には適用されません。CLIを使用している場合は [Copilot CLI Hooks リファレンス](https://docs.github.com/en/copilot/reference/hooks-reference) を参照してください。
 
 ## 設定
 

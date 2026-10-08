@@ -253,46 +253,75 @@ git fetch
 
 ### Cursor
 
-Add a rule in `.cursorrules` or use the Rules for AI panel:
+Cursor supports hooks via `.cursor/hooks.json` (project) or `~/.cursor/hooks.json` (user). The `afterFileEdit` hook runs after the agent edits files.
 
-```
-After editing files, always run: git ai-trail mark --agent cursor --quiet
-```
-
-Or configure in Cursor's settings (if available) to run a post-edit command.
-
-### Claude Code (Desktop)
-
-Create a `~/.config/claude-code/hooks.json` file with a PostToolUse hook:
-
+**`.cursor/hooks.json`:**
 ```json
 {
+  "version": 1,
   "hooks": {
-    "PostToolUse": {
-      "Edit": "git ai-trail mark --agent claude-code --quiet",
-      "Write": "git ai-trail mark --agent claude-code --quiet"
-    }
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/mark-ai-changes.sh"
+      }
+    ]
   }
 }
 ```
 
-This automatically marks files after Claude Code's Edit or Write tool usage.
-
-### GitHub Copilot
-
-Install as a commit hook:
-
+**`.cursor/hooks/mark-ai-changes.sh`:**
 ```bash
-git ai-trail install-hooks
+#!/bin/bash
+git ai-trail mark --quiet --agent cursor
 ```
 
-Then mark changes before committing:
+Make it executable: `chmod +x .cursor/hooks/mark-ai-changes.sh`
 
-```bash
-# After using Copilot
-git ai-trail mark --agent copilot
-git commit -m "..."
+Reference: [Cursor Hooks Documentation](https://cursor.com/docs/hooks)
+
+### Claude Code (CLI)
+
+Claude Code supports hooks via `.claude/settings.json` (project) or `~/.claude/settings.json` (user). The `PostToolUse` hook runs after tool execution.
+
+**`.claude/settings.json`:**
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git ai-trail mark --quiet --agent claude-code"
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
+
+The `matcher` filters to file-editing tools only. The hook receives event JSON on stdin.
+
+Reference: [Claude Code Hooks Documentation](https://code.claude.com/docs/en/hooks)
+
+### GitHub Copilot (Manual Workflow)
+
+GitHub Copilot (IDE extension) does not support automatic post-edit hooks. Use a manual workflow:
+
+1. Install the post-commit hook:
+   ```bash
+   git ai-trail install-hooks
+   ```
+
+2. After using Copilot, mark changes before committing:
+   ```bash
+   git ai-trail mark --agent copilot
+   git commit -m "..."
+   ```
+
+**Note**: GitHub Copilot CLI has hook support via `.github/hooks/copilot-cli-policy.json`, but this applies only to the CLI tool, not the IDE extension. See [Copilot CLI Hooks Reference](https://docs.github.com/en/copilot/reference/hooks-reference) if using the CLI.
 
 ## Configuration
 
