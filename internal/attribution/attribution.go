@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Akasan/git-ai-trail/internal/git"
 	"github.com/Akasan/git-ai-trail/internal/notes"
@@ -46,7 +47,7 @@ func Compute(commit string, snapshots []snapshot.Snapshot) (*notes.Attribution, 
 
 	for _, snap := range snapshots {
 		attr.Marks = append(attr.Marks, notes.MarkInfo{
-			Timestamp:   snap.Timestamp.Format("2006-01-02T15:04:05Z"),
+			Timestamp:   snap.Timestamp.UTC().Format(time.RFC3339),
 			Model:       snap.Model,
 			Agent:       snap.Agent,
 			PromptHash:  snap.PromptHash,
@@ -130,13 +131,7 @@ func computeFileAttribution(commit, path string, snapshots []snapshot.Snapshot) 
 		}
 	}
 
-	for i := range lineKinds {
-		if lineKinds[i] == "unchanged" {
-			lineKinds[i] = "human"
-		}
-	}
-
-	ranges := compressRanges(lineKinds)
+	ranges := compressRangesExcludingUnchanged(lineKinds)
 
 	return notes.FileAttribution{
 		Path:   path,
@@ -271,6 +266,53 @@ func compressRanges(lineKinds []string) []notes.LineRange {
 		End:   len(lineKinds),
 		Kind:  currentKind,
 	})
+
+	return ranges
+}
+
+func compressRangesExcludingUnchanged(lineKinds []string) []notes.LineRange {
+	if len(lineKinds) == 0 {
+		return []notes.LineRange{}
+	}
+
+	var ranges []notes.LineRange
+	var currentKind string
+	var startLine int
+
+	for i := 0; i < len(lineKinds); i++ {
+		if lineKinds[i] == "unchanged" {
+			if currentKind != "" && currentKind != "unchanged" {
+				ranges = append(ranges, notes.LineRange{
+					Start: startLine,
+					End:   i,
+					Kind:  currentKind,
+				})
+				currentKind = ""
+			}
+			continue
+		}
+
+		if currentKind == "" || currentKind == "unchanged" {
+			currentKind = lineKinds[i]
+			startLine = i + 1
+		} else if lineKinds[i] != currentKind {
+			ranges = append(ranges, notes.LineRange{
+				Start: startLine,
+				End:   i,
+				Kind:  currentKind,
+			})
+			currentKind = lineKinds[i]
+			startLine = i + 1
+		}
+	}
+
+	if currentKind != "" && currentKind != "unchanged" {
+		ranges = append(ranges, notes.LineRange{
+			Start: startLine,
+			End:   len(lineKinds),
+			Kind:  currentKind,
+		})
+	}
 
 	return ranges
 }

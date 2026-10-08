@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Akasan/git-ai-trail/internal/git"
@@ -63,11 +64,11 @@ func Mark(args []string) error {
 			}
 
 			relPath, err := filepath.Rel(repoRoot, absPath)
-			if err != nil {
-				return fmt.Errorf("file is outside repository: %w", err)
+			if err != nil || strings.HasPrefix(relPath, "..") {
+				return fmt.Errorf("file is outside repository: %s", absPath)
 			}
 
-			paths = []string{relPath}
+			paths = []string{absPath}
 		}
 	}
 
@@ -122,9 +123,9 @@ func Mark(args []string) error {
 		}
 
 		relPath, err := filepath.Rel(repoRoot, absPath)
-		if err != nil {
+		if err != nil || strings.HasPrefix(relPath, "..") {
 			if !isQuiet {
-				fmt.Fprintf(os.Stderr, "Warning: %s is outside repository: %v\n", path, err)
+				fmt.Fprintf(os.Stderr, "Warning: %s is outside repository\n", path)
 			}
 			continue
 		}

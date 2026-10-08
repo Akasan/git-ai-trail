@@ -82,7 +82,6 @@ func GetWorkingTreeContent(path string) (string, error) {
 	return string(out), nil
 }
 
-
 func Commit(args []string) error {
 	cmd := exec.Command("git", append([]string{"commit"}, args...)...)
 	cmd.Stdin = os.Stdin
@@ -338,26 +337,40 @@ func GetShowPrefix() (string, error) {
 func GetDiffAddedLines(commit, path string) (map[int]bool, error) {
 	parent, err := GetParentCommit(commit)
 	var cmd *exec.Cmd
-	if err != nil {
-		cmd = exec.Command("git", "show", "--no-patch", "--format=", commit, "--", path)
+	isRootCommit := err != nil
+
+	if isRootCommit {
+		cmd = exec.Command("git", "show", commit+":"+path)
 	} else {
 		cmd = exec.Command("git", "diff", "-U0", parent, commit, "--", path)
 	}
 
 	out, err := cmd.Output()
 	if err != nil {
-		cmd = exec.Command("git", "show", commit, "--", path)
-		out, err = cmd.Output()
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 
 	added := make(map[int]bool)
+
+	if isRootCommit {
+		content := strings.TrimSuffix(string(out), "\n")
+		lines := strings.Split(content, "\n")
+		if len(lines) == 1 && lines[0] == "" {
+			lines = []string{}
+		}
+		for i := range lines {
+			added[i+1] = true
+		}
+		return added, nil
+	}
+
 	lines := strings.Split(string(out), "\n")
 	var lineNum int
 
 	for _, line := range lines {
+		if strings.HasPrefix(line, "\\") {
+			continue
+		}
 		if strings.HasPrefix(line, "@@") {
 			parts := strings.Fields(line)
 			if len(parts) >= 3 {

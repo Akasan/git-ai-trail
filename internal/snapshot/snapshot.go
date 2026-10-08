@@ -90,6 +90,10 @@ func LoadAll() ([]Snapshot, error) {
 			continue
 		}
 
+		if strings.HasPrefix(entry.Name(), "baseline_") {
+			continue
+		}
+
 		data, err := os.ReadFile(filepath.Join(snapshotDir, entry.Name()))
 		if err != nil {
 			continue
@@ -97,6 +101,10 @@ func LoadAll() ([]Snapshot, error) {
 
 		var snapshot Snapshot
 		if err := json.Unmarshal(data, &snapshot); err != nil {
+			continue
+		}
+
+		if snapshot.Timestamp.IsZero() || snapshot.Files == nil {
 			continue
 		}
 
@@ -117,6 +125,65 @@ func Clear() error {
 	}
 
 	return os.RemoveAll(snapshotDir)
+}
+
+func ClearFiles(files []string) error {
+	if len(files) == 0 {
+		return Clear()
+	}
+
+	snapshotDir, err := GetSnapshotDir()
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(snapshotDir); os.IsNotExist(err) {
+		return nil
+	}
+
+	fileSet := make(map[string]bool)
+	for _, f := range files {
+		fileSet[f] = true
+	}
+
+	snapshots, err := LoadAll()
+	if err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(snapshotDir)
+	if err != nil {
+		return err
+	}
+
+	for i, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		if strings.HasPrefix(entry.Name(), "baseline_") {
+			continue
+		}
+
+		if i >= len(snapshots) {
+			break
+		}
+
+		snap := snapshots[i]
+		shouldDelete := false
+		for file := range snap.Files {
+			if fileSet[file] {
+				shouldDelete = true
+				break
+			}
+		}
+
+		if shouldDelete {
+			os.Remove(filepath.Join(snapshotDir, entry.Name()))
+		}
+	}
+
+	return nil
 }
 
 func HashPrompt(prompt string) string {
