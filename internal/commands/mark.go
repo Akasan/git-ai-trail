@@ -149,8 +149,12 @@ func Mark(args []string) error {
 			snapshotDir, err := snapshot.GetSnapshotDir()
 			if err == nil {
 				baselineFile := filepath.Join(snapshotDir, "baseline_"+relPath)
-				os.MkdirAll(filepath.Dir(baselineFile), 0755)
-				os.WriteFile(baselineFile, []byte(headContent), 0644)
+				if err := os.MkdirAll(filepath.Dir(baselineFile), 0755); err != nil && !isQuiet {
+					fmt.Fprintf(os.Stderr, "Warning: failed to create baseline dir: %v\n", err)
+				}
+				if err := os.WriteFile(baselineFile, []byte(headContent), 0644); err != nil && !isQuiet {
+					fmt.Fprintf(os.Stderr, "Warning: failed to write baseline: %v\n", err)
+				}
 			}
 		}
 	}
