@@ -69,6 +69,7 @@ Record current file changes as AI-generated. Call this immediately after AI edit
 - `--agent NAME`: AI agent/editor name (e.g., `cursor`, `github-copilot`)
 - `--prompt TEXT`: Prompt text (truncated to 200 chars)
 - `--prompt-file PATH`: Read prompt from file
+- `--stdin-json`: Read file path from JSON on stdin (for editor hooks that provide `tool_input.file_path`)
 - `--quiet`, `-q`: Suppress output
 
 **Examples:**
@@ -395,7 +396,7 @@ A: Yes! As long as you call `git ai-trail mark` after AI edits, it works with an
 A: Those lines will be attributed as "human". For safety, install the post-commit hook, and use editor hooks (Cursor, Claude Code) to mark automatically.
 
 **Q: Does this slow down commits?**
-A: Minimal impact - typically <100ms. The `mark` command is designed to be fast for hook usage.
+A: The `mark` command is fast (typically <100ms). Attribution computation during commit depends on file size; for small to medium files it's negligible, but very large files (1000+ lines) may take a few seconds due to fuzzy matching.
 
 **Q: Can I use this on existing repos?**
 A: Yes! Run `git ai-trail init` and start marking from now on. Historical commits won't have attribution data.

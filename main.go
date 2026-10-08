@@ -98,6 +98,7 @@ Mark options:
   --agent NAME           AI agent/editor name
   --prompt TEXT          Prompt text (truncated in storage)
   --prompt-file PATH     Read prompt from file
+  --stdin-json           Read file path from JSON on stdin (for editor hooks)
   --quiet, -q            Suppress output
 
 Examples:
