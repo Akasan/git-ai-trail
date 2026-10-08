@@ -279,36 +279,6 @@ func levenshteinDistance(s1, s2 string) int {
 	return prev[n]
 }
 
-func compressRanges(lineKinds []string) []notes.LineRange {
-	if len(lineKinds) == 0 {
-		return []notes.LineRange{}
-	}
-
-	var ranges []notes.LineRange
-	currentKind := lineKinds[0]
-	startLine := 1
-
-	for i := 1; i < len(lineKinds); i++ {
-		if lineKinds[i] != currentKind {
-			ranges = append(ranges, notes.LineRange{
-				Start: startLine,
-				End:   i,
-				Kind:  currentKind,
-			})
-			currentKind = lineKinds[i]
-			startLine = i + 1
-		}
-	}
-
-	ranges = append(ranges, notes.LineRange{
-		Start: startLine,
-		End:   len(lineKinds),
-		Kind:  currentKind,
-	})
-
-	return ranges
-}
-
 func compressRangesExcludingUnchanged(lineKinds []string) []notes.LineRange {
 	if len(lineKinds) == 0 {
 		return []notes.LineRange{}

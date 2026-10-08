@@ -266,7 +266,7 @@ func TestStdinJSONHookSimulation(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdin = r
 	go func() {
-		w.Write(jsonBytes)
+		_, _ = w.Write(jsonBytes)
 		w.Close()
 	}()
 
