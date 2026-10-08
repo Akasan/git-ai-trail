@@ -11,5 +11,9 @@ func Commit(args []string) error {
 		return fmt.Errorf("git commit failed: %w", err)
 	}
 
+	if err := Record([]string{}); err != nil {
+		return err
+	}
+
 	return nil
 }

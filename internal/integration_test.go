@@ -159,7 +159,7 @@ func TestAIModifiedFlow(t *testing.T) {
 		t.Fatalf("Mark failed: %v", err)
 	}
 
-	modifiedContent := "line1\nline2 modified\nline3\n"
+	modifiedContent := "line1\nline2x\nline3\n"
 	if err := os.WriteFile(testFile, []byte(modifiedContent), 0644); err != nil {
 		t.Fatal(err)
 	}
