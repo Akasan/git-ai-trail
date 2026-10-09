@@ -110,7 +110,7 @@ func Verify(args []string) error {
 		for _, h := range hunks {
 			fmt.Fprintf(os.Stderr, "  %s (%s:%d-%d)\n", h.CommitHash[:7], h.FilePath, h.StartLine, h.EndLine)
 		}
-		os.Exit(1)
+		return fmt.Errorf("unverified AI-attributed changes found")
 	}
 
 	apiKey, err := llm.GetAPIKey()

@@ -2,7 +2,6 @@ package internal
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,25 +13,25 @@ import (
 )
 
 func TestVerifyHappyPath(t *testing.T) {
-	dir, cleanup := setupTestRepo(t)
+	_, cleanup := setupTestRepo(t)
 	defer cleanup()
 
 	client := llm.NewFakeClient()
 	client.Questions["test-diff"] = "What does this function do?"
 	client.Grades["test-diffWhat does this function do?It calculates the sum"] = true
 
-	testFile := filepath.Join(dir, "main.go")
+	testFile := "main.go"
 	if err := os.WriteFile(testFile, []byte("package main\n\nfunc add(a, b int) int {\n    return a + b\n}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	runCmd(t, dir, "git", "add", "main.go")
+	runCmd(t, ".", "git", "add", "main.go")
 
 	if err := commands.Mark([]string{"--model", "test-model", "--agent", "test-agent", "main.go"}); err != nil {
 		t.Fatalf("Mark failed: %v", err)
 	}
 
-	runCmd(t, dir, "git", "commit", "-m", "Add function")
+	runCmd(t, ".", "git", "commit", "-m", "Add function")
 
 	if err := commands.Record([]string{}); err != nil {
 		t.Fatalf("Record failed: %v", err)
@@ -54,54 +53,64 @@ func TestVerifyHappyPath(t *testing.T) {
 }
 
 func TestVerifyCheckMode(t *testing.T) {
-	dir, cleanup := setupTestRepo(t)
+	_, cleanup := setupTestRepo(t)
 	defer cleanup()
 
-	testFile := filepath.Join(dir, "main.go")
-	if err := os.WriteFile(testFile, []byte("package main\n\nfunc test() {}\n"), 0644); err != nil {
+	testFile := "initial.go"
+	if err := os.WriteFile(testFile, []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "add", testFile)
+	runCmd(t, ".", "git", "commit", "-m", "Initial commit")
+
+	testFile2 := "main.go"
+	if err := os.WriteFile(testFile2, []byte("package main\n\nfunc test() {}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	runCmd(t, dir, "git", "add", "main.go")
+	runCmd(t, ".", "git", "add", "main.go")
 
 	if err := commands.Mark([]string{"--model", "test", "main.go"}); err != nil {
 		t.Fatal(err)
 	}
 
-	runCmd(t, dir, "git", "commit", "-m", "Test commit")
+	runCmd(t, ".", "git", "commit", "-m", "Test commit")
 
 	if err := commands.Record([]string{}); err != nil {
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command("git", "ai-trail", "verify", "--check", "HEAD~1..HEAD")
-	cmd.Dir = dir
-	output, err := cmd.CombinedOutput()
+	err := commands.Verify([]string{"--check", "HEAD~1..HEAD"})
 
 	if err == nil {
 		t.Errorf("Expected verify --check to fail with unverified changes, got success")
 	}
 
-	if !strings.Contains(string(output), "unverified") {
-		t.Errorf("Expected 'unverified' in output, got: %s", string(output))
+	if !strings.Contains(err.Error(), "unverified") {
+		t.Errorf("Expected 'unverified' in error message, got: %v", err)
 	}
 }
 
 func TestVerifyNoAIChanges(t *testing.T) {
-	dir, cleanup := setupTestRepo(t)
+	_, cleanup := setupTestRepo(t)
 	defer cleanup()
 
-	testFile := filepath.Join(dir, "main.go")
-	if err := os.WriteFile(testFile, []byte("package main\n\nfunc human() {}\n"), 0644); err != nil {
+	testFile := "initial.go"
+	if err := os.WriteFile(testFile, []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "add", testFile)
+	runCmd(t, ".", "git", "commit", "-m", "Initial commit")
+
+	testFile2 := "main.go"
+	if err := os.WriteFile(testFile2, []byte("package main\n\nfunc human() {}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	runCmd(t, dir, "git", "add", "main.go")
-	runCmd(t, dir, "git", "commit", "-m", "Human commit")
+	runCmd(t, ".", "git", "add", "main.go")
+	runCmd(t, ".", "git", "commit", "-m", "Human commit")
 
-	cmd := exec.Command("git", "ai-trail", "verify", "--check", "HEAD~1..HEAD")
-	cmd.Dir = dir
-	err := cmd.Run()
+	err := commands.Verify([]string{"--check", "HEAD~1..HEAD"})
 
 	if err != nil {
 		t.Errorf("Expected verify --check to pass with no AI changes, got error: %v", err)
@@ -137,21 +146,21 @@ func TestPrePushHook(t *testing.T) {
 }
 
 func TestVerificationNoteStorage(t *testing.T) {
-	dir, cleanup := setupTestRepo(t)
+	_, cleanup := setupTestRepo(t)
 	defer cleanup()
 
-	testFile := filepath.Join(dir, "main.go")
+	testFile := "main.go"
 	if err := os.WriteFile(testFile, []byte("package main\n\nfunc test() {}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	runCmd(t, dir, "git", "add", "main.go")
+	runCmd(t, ".", "git", "add", "main.go")
 
 	if err := commands.Mark([]string{"--model", "test", "main.go"}); err != nil {
 		t.Fatal(err)
 	}
 
-	runCmd(t, dir, "git", "commit", "-m", "Test commit")
+	runCmd(t, ".", "git", "commit", "-m", "Test commit")
 
 	if err := commands.Record([]string{}); err != nil {
 		t.Fatal(err)
