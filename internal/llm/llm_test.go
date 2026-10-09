@@ -241,7 +241,7 @@ func TestOpenAIClientIntegration(t *testing.T) {
 				{Message: openaiMessage{Content: "VERDICT: PASS\nREASON: Good answer"}},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -279,7 +279,7 @@ func TestXAIClientIntegration(t *testing.T) {
 				{Message: openaiMessage{Content: "VERDICT: FAIL\nREASON: Insufficient understanding"}},
 			},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 

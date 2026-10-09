@@ -259,8 +259,9 @@ git ai-trail verify main..HEAD
 # 未検証変更をチェック（CIで使用）
 git ai-trail verify --check
 
-# 個人のモデル設定（.git-ai-trail.json より優先）
-git config ai-trail.verifyModel claude-sonnet-4-6
+# 個人のプロバイダ/モデル設定（.git-ai-trail.json より優先）
+git config ai-trail.verifyProvider openai
+git config ai-trail.verifyModel gpt-4o-mini
 ```
 
 **対話フロー:**
