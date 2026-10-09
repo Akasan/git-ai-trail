@@ -25,28 +25,28 @@ func setupTestRepo(t *testing.T) (string, func()) {
 	}
 
 	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
+		_ = os.Chdir(origDir); _ = os.RemoveAll(tmpDir); t.Fatal(err)
 	}
 
 	cmd := exec.Command("git", "init")
 	cmd.Dir = tmpDir
 	if err := cmd.Run(); err != nil {
 		os.Chdir(origDir)
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		t.Fatal(err)
 	}
 
 	cmd = exec.Command("git", "config", "user.name", "Test User")
 	cmd.Dir = tmpDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	cmd = exec.Command("git", "config", "user.email", "test@example.com")
 	cmd.Dir = tmpDir
-	cmd.Run()
+	_ = cmd.Run()
 
 	cleanup := func() {
-		os.Chdir(origDir)
-		os.RemoveAll(tmpDir)
+		_ = os.Chdir(origDir)
+		_ = os.RemoveAll(tmpDir)
 	}
 
 	return tmpDir, cleanup
@@ -131,10 +131,10 @@ func TestGetVerifyModelPrecedence(t *testing.T) {
 			},
 		}
 		data, _ := json.Marshal(testConfig)
-		os.WriteFile(configPath, data, 0644)
+		_ = os.WriteFile(configPath, data, 0644)
 
 		cmd := exec.Command("git", "config", "ai-trail.verifyModel", "claude-sonnet-4-6")
-		cmd.Run()
+		_ = cmd.Run()
 
 		model := GetVerifyModel()
 		if model != "claude-sonnet-4-6" {
@@ -142,13 +142,13 @@ func TestGetVerifyModelPrecedence(t *testing.T) {
 		}
 
 		cmd = exec.Command("git", "config", "--unset", "ai-trail.verifyModel")
-		cmd.Run()
-		os.Remove(configPath)
+		_ = cmd.Run()
+		_ = os.Remove(configPath)
 	})
 
 	t.Run("git config overrides default", func(t *testing.T) {
 		cmd := exec.Command("git", "config", "ai-trail.verifyModel", "claude-sonnet-4-6")
-		cmd.Run()
+		_ = cmd.Run()
 
 		model := GetVerifyModel()
 		if model != "claude-sonnet-4-6" {
@@ -156,7 +156,7 @@ func TestGetVerifyModelPrecedence(t *testing.T) {
 		}
 
 		cmd = exec.Command("git", "config", "--unset", "ai-trail.verifyModel")
-		cmd.Run()
+		_ = cmd.Run()
 	})
 }
 
@@ -208,8 +208,8 @@ func TestConfigSource(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			exec.Command("git", "config", "--unset", "ai-trail.verifyModel").Run()
-			os.Remove(configPath)
+			_ = exec.Command("git", "config", "--unset", "ai-trail.verifyModel").Run()
+			_ = os.Remove(configPath)
 
 			if tt.setupGitConf {
 				cmd := exec.Command("git", "config", "ai-trail.verifyModel", tt.gitConfValue)
@@ -235,8 +235,8 @@ func TestConfigSource(t *testing.T) {
 				t.Errorf("GetVerifyModel() = %q, want %q (source: %s)", model, tt.wantModel, tt.wantSource)
 			}
 
-			exec.Command("git", "config", "--unset", "ai-trail.verifyModel").Run()
-			os.Remove(configPath)
+			_ = exec.Command("git", "config", "--unset", "ai-trail.verifyModel").Run()
+			_ = os.Remove(configPath)
 		})
 	}
 }
