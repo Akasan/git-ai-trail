@@ -126,35 +126,41 @@ func installPrePushHook(hooksDir string) error {
 remote="$1"
 url="$2"
 
+# Save stdin to temp file for chained hook
+stdin_file=$(mktemp)
+trap 'rm -f "$stdin_file"' EXIT
+cat > "$stdin_file"
+
 while read local_ref local_sha remote_ref remote_sha
 do
     if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
         continue
     fi
     
+    # For new branches or when remote ref is zero, check commits not on any remote
     if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
-        range="$local_sha"
+        range="$local_sha --not --remotes=$remote"
     else
         range="$remote_sha..$local_sha"
     fi
     
     if command -v git-ai-trail >/dev/null 2>&1; then
-        if ! git-ai-trail verify --check "$range"; then
+        if ! git-ai-trail verify --check $range; then
             echo "Push rejected: unverified AI-attributed changes detected"
             echo "Run 'git ai-trail verify' to verify your changes"
             exit 1
         fi
     elif command -v git >/dev/null 2>&1; then
-        if ! git ai-trail verify --check "$range"; then
+        if ! git ai-trail verify --check $range; then
             echo "Push rejected: unverified AI-attributed changes detected"
             echo "Run 'git ai-trail verify' to verify your changes"
             exit 1
         fi
     fi
-done
+done < "$stdin_file"
 
 if [ -x "$0.backup" ]; then
-    "$0.backup" "$@"
+    cat "$stdin_file" | "$0.backup" "$@"
 fi
 `
 
@@ -175,20 +181,38 @@ fi
 }
 
 func Init(args []string) error {
-	if err := git.ConfigSet("notes.rewriteRef", "refs/notes/ai-trail"); err != nil {
-		return fmt.Errorf("failed to set notes.rewriteRef: %w", err)
+	existing, _ := git.Run("config", "--get-all", "notes.rewriteRef")
+	existingRefs := make(map[string]bool)
+	for _, ref := range strings.Split(strings.TrimSpace(existing), "\n") {
+		if ref != "" {
+			existingRefs[ref] = true
+		}
 	}
 
-	if err := git.ConfigAdd("notes.rewriteRef", "refs/notes/ai-trail-verify"); err != nil {
-		return fmt.Errorf("failed to add verify notes.rewriteRef: %w", err)
+	if !existingRefs["refs/notes/ai-trail"] {
+		if err := git.ConfigAdd("notes.rewriteRef", "refs/notes/ai-trail"); err != nil {
+			return fmt.Errorf("failed to add notes.rewriteRef: %w", err)
+		}
 	}
 
-	if err := git.ConfigSet("notes.rewrite.amend", "true"); err != nil {
-		return fmt.Errorf("failed to set notes.rewrite.amend: %w", err)
+	if !existingRefs["refs/notes/ai-trail-verify"] {
+		if err := git.ConfigAdd("notes.rewriteRef", "refs/notes/ai-trail-verify"); err != nil {
+			return fmt.Errorf("failed to add verify notes.rewriteRef: %w", err)
+		}
 	}
 
-	if err := git.ConfigSet("notes.rewrite.rebase", "true"); err != nil {
-		return fmt.Errorf("failed to set notes.rewrite.rebase: %w", err)
+	amendVal, _ := git.ConfigGet("notes.rewrite.amend")
+	if amendVal != "true" {
+		if err := git.ConfigSet("notes.rewrite.amend", "true"); err != nil {
+			return fmt.Errorf("failed to set notes.rewrite.amend: %w", err)
+		}
+	}
+
+	rebaseVal, _ := git.ConfigGet("notes.rewrite.rebase")
+	if rebaseVal != "true" {
+		if err := git.ConfigSet("notes.rewrite.rebase", "true"); err != nil {
+			return fmt.Errorf("failed to set notes.rewrite.rebase: %w", err)
+		}
 	}
 
 	originURL, err := git.ConfigGet("remote.origin.url")

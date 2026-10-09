@@ -58,6 +58,10 @@ func (h Hunk) Diff() string {
 }
 
 func Verify(args []string) error {
+	return VerifyWithClient(args, nil)
+}
+
+func VerifyWithClient(args []string, client llm.Client) error {
 	fs := flag.NewFlagSet("verify", flag.ExitOnError)
 	check := fs.Bool("check", false, "Check mode: non-interactive, exit non-zero if unverified AI changes exist")
 	if err := fs.Parse(args); err != nil {
@@ -113,24 +117,33 @@ func Verify(args []string) error {
 		return fmt.Errorf("unverified AI-attributed changes found")
 	}
 
-	apiKey, err := llm.GetAPIKey()
-	if err != nil {
-		return err
-	}
+	if client == nil {
+		apiKey, err := llm.GetAPIKey()
+		if err != nil {
+			return err
+		}
 
-	model, err := git.ConfigGet("ai-trail.verifyModel")
-	if err != nil || model == "" {
-		model = "claude-3-5-sonnet-20241022"
-	}
+		model, err := git.ConfigGet("ai-trail.verifyModel")
+		if err != nil || model == "" {
+			model = "claude-sonnet-4"
+		}
 
-	client := llm.NewAnthropicClient(apiKey, model)
+		client = llm.NewAnthropicClient(apiKey, model)
+	}
 
 	verifier, err := getVerifierIdentity()
 	if err != nil {
 		return err
 	}
 
+	model, err := git.ConfigGet("ai-trail.verifyModel")
+	if err != nil || model == "" {
+		model = "claude-sonnet-4"
+	}
+
 	fmt.Printf("Found %d unverified AI-attributed hunk(s)\n\n", len(hunks))
+
+	reader := bufio.NewReader(os.Stdin)
 
 	for i, hunk := range hunks {
 		fmt.Printf("=== Hunk %d/%d ===\n", i+1, len(hunks))
@@ -157,7 +170,6 @@ func Verify(args []string) error {
 
 		for {
 			fmt.Print("Your answer (or 'skip' to skip, 'quit' to exit): ")
-			reader := bufio.NewReader(os.Stdin)
 			answer, err = reader.ReadString('\n')
 			if err != nil {
 				return fmt.Errorf("failed to read answer: %w", err)
@@ -166,8 +178,8 @@ func Verify(args []string) error {
 			answer = strings.TrimSpace(answer)
 
 			if answer == "quit" {
-				fmt.Println("Exiting verification")
-				return nil
+				fmt.Println("Exiting verification (unverified changes remain)")
+				return fmt.Errorf("verification incomplete")
 			}
 
 			if answer == "skip" {
@@ -246,6 +258,7 @@ func getCommitsInRange(revRange string) ([]string, error) {
 
 func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
 	var hunks []Hunk
+	var hasParseErrors bool
 
 	for _, commit := range commits {
 		attr, err := notes.Load(commit)
@@ -253,7 +266,11 @@ func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
 			continue
 		}
 
-		verifyRecord, _ := loadVerificationRecord(commit)
+		verifyRecord, err := loadVerificationRecord(commit)
+		if err != nil && err.Error() != "not found" {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse verification notes for %s: %v\n", commit[:7], err)
+			hasParseErrors = true
+		}
 
 		for filePath, fileAttr := range attr.Files {
 			fileContent, err := git.GetFileAtCommit(commit, filePath)
@@ -302,6 +319,10 @@ func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
 				hunks = append(hunks, hunk)
 			}
 		}
+	}
+
+	if hasParseErrors {
+		return hunks, fmt.Errorf("verification notes contain parsing errors (possibly from squash/rebase); please run 'git notes remove refs/notes/ai-trail-verify <commit>' for affected commits and re-verify")
 	}
 
 	return hunks, nil
@@ -372,12 +393,12 @@ func saveVerification(hunk Hunk, question, answer string, verdict bool, reason, 
 func loadVerificationRecord(commit string) (*VerificationRecord, error) {
 	data, err := git.GetNote(VerifyNotesRef, commit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("not found")
 	}
 
 	var record VerificationRecord
 	if err := json.Unmarshal([]byte(data), &record); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 
 	return &record, nil
@@ -409,7 +430,7 @@ func getUpstreamBranch() (string, error) {
 	}
 
 	upstream = strings.TrimPrefix(upstream, "refs/heads/")
-	
+
 	remote, err := git.ConfigGet(fmt.Sprintf("branch.%s.remote", currentBranch))
 	if err == nil && remote != "" && remote != "." {
 		upstream = remote + "/" + upstream

@@ -216,7 +216,7 @@ Verify your understanding of AI-attributed changes through interactive Q&A with 
 
 **Requirements:**
 - `ANTHROPIC_API_KEY` environment variable (Claude API key)
-- Optional: configure model via `git config ai-trail.verifyModel` (default: `claude-3-5-sonnet-20241022`)
+- Optional: configure model via `git config ai-trail.verifyModel` (default: `claude-sonnet-4`)
 
 **Options:**
 - `--check`: Non-interactive check mode; exits non-zero if unverified AI changes exist (for CI/pre-push hooks)
@@ -233,7 +233,7 @@ git ai-trail verify main..HEAD
 git ai-trail verify --check
 
 # Configure model
-git config ai-trail.verifyModel claude-3-5-sonnet-20241022
+git config ai-trail.verifyModel claude-sonnet-4
 ```
 
 **Interactive Flow:**
@@ -247,7 +247,7 @@ git config ai-trail.verifyModel claude-3-5-sonnet-20241022
 **Verification Storage:**
 - Stored in git notes `refs/notes/ai-trail-verify`
 - Keyed by commit hash, file path, and line range
-- Survives amend/rebase (when configured)
+- **Important:** Verification is commit-specific and does not survive rebase/amend; you must re-verify after rewriting commits
 - Should be pushed with: `git push origin refs/notes/ai-trail-verify`
 
 ## Attribution Schema
@@ -352,7 +352,10 @@ jobs:
 2. Enable "Require status checks to pass"
 3. Add "verify" to required checks
 
-**Note:** The pre-push hook provides local protection, but CI is the definitive gate since hooks can be bypassed.
+**Important notes:**
+- The pre-push hook provides local protection, but CI is the definitive gate since hooks can be bypassed.
+- **Attribution notes must exist:** If `refs/notes/ai-trail` is not pushed, `verify --check` will pass without verification (there are no AI-attributed changes to verify). Make sure to push both notes refs.
+- Fork PRs: Contributors from forks cannot push notes to the upstream repository. Consider requiring verification in a local branch before opening the PR, or accepting that fork PRs skip verification.
 
 ## Editor/Agent Integration
 

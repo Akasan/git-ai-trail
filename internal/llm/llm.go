@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -23,7 +24,7 @@ type AnthropicClient struct {
 
 func NewAnthropicClient(apiKey, model string) *AnthropicClient {
 	if model == "" {
-		model = "claude-3-5-sonnet-20241022"
+		model = "claude-sonnet-4"
 	}
 	return &AnthropicClient{
 		APIKey: apiKey,
@@ -167,11 +168,26 @@ func parseVerdict(response string) (pass bool, reason string) {
 	lines := bytes.Split([]byte(response), []byte("\n"))
 	
 	for _, line := range lines {
-		if bytes.HasPrefix(line, []byte("VERDICT:")) {
-			verdict := string(bytes.TrimSpace(bytes.TrimPrefix(line, []byte("VERDICT:"))))
-			pass = verdict == "PASS"
-		} else if bytes.HasPrefix(line, []byte("REASON:")) {
-			reason = string(bytes.TrimSpace(bytes.TrimPrefix(line, []byte("REASON:"))))
+		lineStr := string(bytes.TrimSpace(line))
+		
+		if bytes.Contains(line, []byte("VERDICT:")) {
+			parts := bytes.SplitN(line, []byte("VERDICT:"), 2)
+			if len(parts) == 2 {
+				verdict := string(bytes.TrimSpace(parts[1]))
+				verdict = strings.TrimPrefix(verdict, "*")
+				verdict = strings.TrimSuffix(verdict, "*")
+				verdict = strings.TrimSpace(verdict)
+				pass = verdict == "PASS"
+			}
+		} else if bytes.Contains(line, []byte("REASON:")) {
+			parts := bytes.SplitN(line, []byte("REASON:"), 2)
+			if len(parts) == 2 {
+				reason = string(bytes.TrimSpace(parts[1]))
+			}
+		}
+		
+		if reason == "" && (strings.Contains(lineStr, "VERDICT") || strings.Contains(lineStr, "REASON")) {
+			continue
 		}
 	}
 	

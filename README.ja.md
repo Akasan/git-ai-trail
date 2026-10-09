@@ -216,7 +216,7 @@ LLMとの対話的なQ&Aを通じて、AI帰属変更の理解度を検証しま
 
 **必要要件:**
 - `ANTHROPIC_API_KEY` 環境変数（Claude APIキー）
-- オプション: `git config ai-trail.verifyModel` でモデルを設定（デフォルト: `claude-3-5-sonnet-20241022`）
+- オプション: `git config ai-trail.verifyModel` でモデルを設定（デフォルト: `claude-sonnet-4`）
 
 **オプション:**
 - `--check`: 非対話チェックモード。未検証のAI変更が存在する場合、非ゼロで終了（CI/pre-pushフック用）
@@ -233,7 +233,7 @@ git ai-trail verify main..HEAD
 git ai-trail verify --check
 
 # モデルを設定
-git config ai-trail.verifyModel claude-3-5-sonnet-20241022
+git config ai-trail.verifyModel claude-sonnet-4
 ```
 
 **対話フロー:**
@@ -247,7 +247,7 @@ git config ai-trail.verifyModel claude-3-5-sonnet-20241022
 **検証ストレージ:**
 - git notes `refs/notes/ai-trail-verify` に保存
 - コミットハッシュ、ファイルパス、行範囲でキー化
-- amend/rebaseで保持（設定時）
+- **重要:** 検証はコミット固有であり、rebase/amendでは保持されません。コミットを書き換えた後は再検証が必要です
 - プッシュ方法: `git push origin refs/notes/ai-trail-verify`
 
 ## 帰属スキーマ
@@ -352,7 +352,10 @@ jobs:
 2. "Require status checks to pass" を有効化
 3. "verify" を必須チェックに追加
 
-**注意:** pre-pushフックはローカルでの保護を提供しますが、フックはバイパス可能なため、CIが最終的なゲートです。
+**重要な注意事項:**
+- pre-pushフックはローカルでの保護を提供しますが、フックはバイパス可能なため、CIが最終的なゲートです。
+- **帰属notesが必要:** `refs/notes/ai-trail`がpushされていない場合、`verify --check`は検証なしで通過します（検証すべきAI帰属変更がないため）。両方のnotes refsをpushすることを確認してください。
+- フォークからのPR: フォークからの貢献者はupstreamリポジトリにnotesをpushできません。PRを開く前にローカルブランチで検証を要求するか、フォークPRは検証をスキップすることを受け入れてください。
 
 ## エディタ/エージェント統合
 
