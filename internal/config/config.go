@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -25,17 +26,30 @@ func Load() (*Config, error) {
 	}
 
 	configPath := filepath.Join(repoRoot, ConfigFileName)
-	data, err := os.ReadFile(configPath)
+	
+	info, err := os.Stat(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &Config{}, nil
 		}
 		return nil, err
 	}
+	
+	if info.IsDir() {
+		fmt.Fprintf(os.Stderr, "Warning: %s is a directory, not a file. Using default configuration.\n", ConfigFileName)
+		return &Config{}, nil
+	}
+	
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, err
+	}
 
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+		fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", ConfigFileName, err)
+		fmt.Fprintf(os.Stderr, "Using default configuration. Please check the JSON syntax.\n")
+		return &Config{}, nil
 	}
 
 	return &cfg, nil

@@ -30,14 +30,14 @@ REASON: The answer is incorrect`,
 			response: `**VERDICT:** PASS
 **REASON:** Good understanding`,
 			wantPass: true,
-			wantReason: "** Good understanding",
+			wantReason: "Good understanding",
 		},
 		{
 			name: "markdown bold verdict fail",
 			response: `**VERDICT:** FAIL
 **REASON:** Needs improvement`,
 			wantPass: false,
-			wantReason: "** Needs improvement",
+			wantReason: "Needs improvement",
 		},
 		{
 			name: "markdown bold value pass",

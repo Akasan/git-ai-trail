@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/Akasan/git-ai-trail/internal/git"
@@ -252,11 +251,20 @@ func TestInvalidJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Load()
-	if err == nil {
-		t.Error("Expected error for invalid JSON, got nil")
+	cfg, err := Load()
+	if err != nil {
+		t.Errorf("Load should not error, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "invalid") && !strings.Contains(err.Error(), "unmarshal") {
-		t.Errorf("Expected JSON parse error, got %v", err)
+	if cfg == nil {
+		t.Fatal("Config should not be nil")
+	}
+	
+	if cfg.Verify.Model != "" {
+		t.Errorf("Expected empty model for invalid JSON, got %q", cfg.Verify.Model)
+	}
+	
+	model := GetVerifyModel()
+	if model != "claude-sonnet-4-5" {
+		t.Errorf("Expected default model for invalid JSON, got %q", model)
 	}
 }

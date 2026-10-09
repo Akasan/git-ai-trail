@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -63,16 +62,18 @@ func Verify(args []string) error {
 }
 
 func VerifyWithClient(args []string, client llm.Client) error {
-	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
-	check := fs.Bool("check", false, "Check mode: non-interactive, exit non-zero if unverified AI changes exist")
-	if err := fs.Parse(args); err != nil {
-		return err
+	var checkFlag bool
+	var revArgs []string
+	
+	for _, arg := range args {
+		if arg == "--check" {
+			checkFlag = true
+		} else {
+			revArgs = append(revArgs, arg)
+		}
 	}
 
-	var revArgs []string
-	if fs.NArg() > 0 {
-		revArgs = fs.Args()
-	} else {
+	if len(revArgs) == 0 {
 		upstream, err := getUpstreamBranch()
 		if err == nil && upstream != "" {
 			revArgs = []string{upstream + "..HEAD"}
@@ -97,8 +98,18 @@ func VerifyWithClient(args []string, client llm.Client) error {
 	}
 
 	if len(commits) == 0 {
-		if *check {
+		if checkFlag {
 			return nil
+		}
+		
+		currentBranch, _ := git.Run("rev-parse", "--abbrev-ref", "HEAD")
+		currentBranch = strings.TrimSpace(currentBranch)
+		
+		if currentBranch == "HEAD" {
+			fmt.Fprintf(os.Stderr, "Warning: on detached HEAD with no unverified commits in specified range\n")
+		} else if (currentBranch == "main" || currentBranch == "master") && len(revArgs) > 0 && strings.Contains(strings.Join(revArgs, " "), "..HEAD") {
+			fmt.Fprintf(os.Stderr, "Warning: on '%s' branch with no commits to verify in range\n", currentBranch)
+			fmt.Fprintf(os.Stderr, "If you have no remote/upstream, use: git ai-trail verify HEAD --not --remotes\n")
 		}
 		fmt.Println("No commits to verify")
 		return nil
@@ -110,14 +121,14 @@ func VerifyWithClient(args []string, client llm.Client) error {
 	}
 
 	if len(hunks) == 0 {
-		if *check {
+		if checkFlag {
 			return nil
 		}
 		fmt.Println("No unverified AI-attributed changes found")
 		return nil
 	}
 
-	if *check {
+	if checkFlag {
 		fmt.Fprintf(os.Stderr, "Found %d unverified AI-attributed hunk(s):\n", len(hunks))
 		for _, h := range hunks {
 			fmt.Fprintf(os.Stderr, "  %s (%s:%d-%d)\n", h.CommitHash[:7], h.FilePath, h.StartLine, h.EndLine)
@@ -274,15 +285,28 @@ func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
 		if err != nil {
 			if strings.Contains(err.Error(), "invalid character") || strings.Contains(err.Error(), "unexpected") {
 				fmt.Fprintf(os.Stderr, "Error: failed to parse attribution notes for %s: %v\n", commit[:7], err)
-				fmt.Fprintf(os.Stderr, "This may be caused by squashing commits. Please run:\n")
-				fmt.Fprintf(os.Stderr, "  git notes remove refs/notes/ai-trail %s\n", commit[:7])
-				return nil, fmt.Errorf("unparseable attribution notes (possibly from squash)")
+				fmt.Fprintf(os.Stderr, "\nThis is likely caused by squashing commits with `git rebase -i` or `git merge --squash`.\n")
+				fmt.Fprintf(os.Stderr, "Squashing concatenates notes into invalid JSON.\n\n")
+				fmt.Fprintf(os.Stderr, "To fix this, you must re-attribute the AI-generated lines in this commit:\n")
+				fmt.Fprintf(os.Stderr, "  1. Check out the commit: git checkout %s\n", commit[:7])
+				fmt.Fprintf(os.Stderr, "  2. Mark the AI-generated files again: git ai-trail mark <files>\n")
+				fmt.Fprintf(os.Stderr, "  3. Amend the commit: git commit --amend --no-edit\n")
+				fmt.Fprintf(os.Stderr, "  4. Re-record attribution: git ai-trail record\n")
+				fmt.Fprintf(os.Stderr, "\nWARNING: Do NOT delete the attribution notes, as that would allow unverified AI code through.\n")
+				return nil, fmt.Errorf("unparseable attribution notes (squash corruption)")
 			}
 			continue
 		}
 
 		verifyRecord, err := loadVerificationRecord(commit)
 		if err != nil && err.Error() != "not found" {
+			if strings.Contains(err.Error(), "invalid character") || strings.Contains(err.Error(), "unexpected") {
+				fmt.Fprintf(os.Stderr, "Error: failed to parse verification notes for %s: %v\n", commit[:7], err)
+				fmt.Fprintf(os.Stderr, "This is likely caused by squashing commits. To fix:\n")
+				fmt.Fprintf(os.Stderr, "  1. Re-verify the commit: git ai-trail verify %s^..%s\n", commit[:7], commit[:7])
+				fmt.Fprintf(os.Stderr, "  2. Or re-attribute and verify (see attribution error above)\n")
+				return nil, fmt.Errorf("unparseable verification notes (squash corruption)")
+			}
 			fmt.Fprintf(os.Stderr, "Warning: failed to parse verification notes for %s: %v\n", commit[:7], err)
 			hasParseErrors = true
 		}

@@ -186,6 +186,8 @@ func parseVerdict(response string) (pass bool, reason string) {
 		} else if verdictFound && strings.HasPrefix(line, "REASON:") {
 			reason = strings.TrimPrefix(line, "REASON:")
 			reason = strings.TrimSpace(reason)
+			reason = strings.Trim(reason, "*")
+			reason = strings.TrimSpace(reason)
 			break
 		}
 	}

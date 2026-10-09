@@ -232,6 +232,8 @@ Create `.git-ai-trail.json` in your repository root to share model settings with
 }
 ```
 
+**Note:** This file is read from the working tree, so a pull request can change the verification model. Consider using CODEOWNERS to require review for changes to `.git-ai-trail.json`. The `--check` mode used in CI does not invoke the LLM, so model changes only affect interactive verification.
+
 **Options:**
 - `--check`: Non-interactive check mode; exits non-zero if unverified AI changes exist (for CI/pre-push hooks)
 

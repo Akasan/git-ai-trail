@@ -16,8 +16,19 @@ jobs:
 
       - name: Fetch AI attribution notes
         run: |
-          git fetch origin refs/notes/ai-trail:refs/notes/ai-trail
-          git fetch origin refs/notes/ai-trail-verify:refs/notes/ai-trail-verify
+          # Fetch attribution notes if they exist
+          if git ls-remote --exit-code origin refs/notes/ai-trail >/dev/null 2>&1; then
+            git fetch origin refs/notes/ai-trail:refs/notes/ai-trail
+          else
+            echo "No attribution notes found on remote (this is normal for repositories without AI-attributed changes)"
+          fi
+          
+          # Fetch verification notes if they exist
+          if git ls-remote --exit-code origin refs/notes/ai-trail-verify >/dev/null 2>&1; then
+            git fetch origin refs/notes/ai-trail-verify:refs/notes/ai-trail-verify
+          else
+            echo "No verification notes found on remote"
+          fi
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -28,15 +39,22 @@ jobs:
         run: go install github.com/Akasan/git-ai-trail@main
 
       - name: Verify AI changes
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git ai-trail verify --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
           elif [ "${{ github.event_name }}" = "push" ]; then
             before="${{ github.event.before }}"
             after="${{ github.event.after }}"
+            branch="${{ github.ref }}"
+            
             # For new branches, before is 0000...
             if [ "$before" = "0000000000000000000000000000000000000000" ]; then
-              git ai-trail verify --check "$after" --not --remotes
+              # Compare against the default branch, excluding the current branch's remote ref
+              # (which may already exist on the runner after checkout)
+              default_branch=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
+              git ai-trail verify --check "origin/${default_branch}..${after}"
             else
               git ai-trail verify --check "$before..$after"
             fi
