@@ -31,7 +31,7 @@ func setupTestRepo(t *testing.T) (string, func()) {
 	cmd := exec.Command("git", "init")
 	cmd.Dir = tmpDir
 	if err := cmd.Run(); err != nil {
-		os.Chdir(origDir)
+		_ = os.Chdir(origDir)
 		_ = os.RemoveAll(tmpDir)
 		t.Fatal(err)
 	}
