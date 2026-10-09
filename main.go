@@ -66,6 +66,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+	case "verify":
+		if err := commands.Verify(args); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	case "version", "--version", "-v":
 		fmt.Printf("git-ai-trail version %s\n", version)
 	case "help", "--help", "-h":
@@ -90,6 +95,7 @@ Usage:
   git ai-trail blame <file>                  Show AI attribution per line
   git ai-trail log [git args...]             Show commits with AI metrics
   git ai-trail show [<commit>]               Show raw attribution record
+  git ai-trail verify [<rev-range>]          Verify understanding of AI changes
   git ai-trail version                       Show version
   git ai-trail help                          Show this help
 
@@ -107,6 +113,8 @@ Examples:
   git ai-trail commit -m "Add feature"
   git ai-trail blame main.go
   git ai-trail log --since="1 week ago"
+  git ai-trail verify
+  git ai-trail verify --check
 `
 	fmt.Print(usage)
 }
