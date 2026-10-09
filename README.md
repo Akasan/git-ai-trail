@@ -373,6 +373,12 @@ jobs:
 - **Attribution notes must exist:** If `refs/notes/ai-trail` is not pushed, `verify --check` will pass without verification (there are no AI-attributed changes to verify). Make sure to push both notes refs.
 - Fork PRs: Contributors from forks cannot push notes to the upstream repository. Consider requiring verification in a local branch before opening the PR, or accepting that fork PRs skip verification.
 
+### Known Limitations
+
+- **Squash merges lose attribution**: When using `git merge --squash` or GitHub's squash merge feature, git notes (including AI attribution) are **not preserved**. The resulting commit will have no attribution notes, and `--check` will pass even if the squashed commits contained unverified AI code.
+  - **Recommendation**: For branches with verified AI changes, use merge commits or rebase merge instead of squashing. Always run `git ai-trail verify --check` in CI on the PR branch **before** merging.
+- **Interactive rebase squashing corrupts notes**: When squashing commits with `git rebase -i`, git concatenates notes from multiple commits, creating invalid JSON. If this happens, follow the recovery steps shown in the error message to re-attribute the AI-generated lines.
+
 ## Editor/Agent Integration
 
 ### Cursor

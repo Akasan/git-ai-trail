@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/Akasan/git-ai-trail/internal/git"
 )
@@ -19,40 +20,62 @@ type VerifyConfig struct {
 	Model string `json:"model,omitempty"`
 }
 
+var (
+	loadOnce     sync.Once
+	cachedConfig *Config
+	loadErr      error
+)
+
+func ResetCache() {
+	loadOnce = sync.Once{}
+	cachedConfig = nil
+	loadErr = nil
+}
+
 func Load() (*Config, error) {
-	repoRoot, err := git.GetRepoRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	configPath := filepath.Join(repoRoot, ConfigFileName)
-	
-	info, err := os.Stat(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return &Config{}, nil
+	loadOnce.Do(func() {
+		repoRoot, err := git.GetRepoRoot()
+		if err != nil {
+			loadErr = err
+			return
 		}
-		return nil, err
-	}
-	
-	if info.IsDir() {
-		fmt.Fprintf(os.Stderr, "Warning: %s is a directory, not a file. Using default configuration.\n", ConfigFileName)
-		return &Config{}, nil
-	}
-	
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, err
-	}
 
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", ConfigFileName, err)
-		fmt.Fprintf(os.Stderr, "Using default configuration. Please check the JSON syntax.\n")
-		return &Config{}, nil
-	}
+		configPath := filepath.Join(repoRoot, ConfigFileName)
+		
+		info, err := os.Stat(configPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				cachedConfig = &Config{}
+				return
+			}
+			loadErr = err
+			return
+		}
+		
+		if info.IsDir() {
+			fmt.Fprintf(os.Stderr, "Warning: %s is a directory, not a file. Using default configuration.\n", ConfigFileName)
+			cachedConfig = &Config{}
+			return
+		}
+		
+		data, err := os.ReadFile(configPath)
+		if err != nil {
+			loadErr = err
+			return
+		}
 
-	return &cfg, nil
+		var cfg Config
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", ConfigFileName, err)
+			fmt.Fprintf(os.Stderr, "Using default configuration. Please check the JSON syntax.\n")
+			cachedConfig = &Config{}
+			return
+		}
+
+		cachedConfig = &cfg
+	})
+	
+	return cachedConfig, loadErr
 }
 
 func GetVerifyModel() string {

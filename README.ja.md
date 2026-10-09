@@ -373,6 +373,12 @@ jobs:
 - **帰属notesが必要:** `refs/notes/ai-trail`がpushされていない場合、`verify --check`は検証なしで通過します（検証すべきAI帰属変更がないため）。両方のnotes refsをpushすることを確認してください。
 - フォークからのPR: フォークからの貢献者はupstreamリポジトリにnotesをpushできません。PRを開く前にローカルブランチで検証を要求するか、フォークPRは検証をスキップすることを受け入れてください。
 
+### 既知の制限事項
+
+- **Squash mergeでは帰属が失われる**: `git merge --squash`またはGitHubのsquash merge機能を使用すると、git notes（AI帰属を含む）は**保持されません**。結果のコミットには帰属notesが付かず、未検証のAIコードを含んでいても`--check`は通過します。
+  - **推奨**: 検証済みのAI変更を含むブランチには、squashの代わりにmerge commitまたはrebase mergeを使用してください。マージ**前**に必ずCIでPRブランチに対して`git ai-trail verify --check`を実行してください。
+- **対話的rebaseでのsquashはnotesを破損する**: `git rebase -i`でコミットをsquashすると、gitは複数のコミットのnotesを連結し、無効なJSONを作成します。これが発生した場合は、エラーメッセージに表示される復旧手順に従ってAI生成行を再帰属してください。
+
 ## エディタ/エージェント統合
 
 ### Cursor

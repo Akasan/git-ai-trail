@@ -285,13 +285,12 @@ func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
 		if err != nil {
 			if strings.Contains(err.Error(), "invalid character") || strings.Contains(err.Error(), "unexpected") {
 				fmt.Fprintf(os.Stderr, "Error: failed to parse attribution notes for %s: %v\n", commit[:7], err)
-				fmt.Fprintf(os.Stderr, "\nThis is likely caused by squashing commits with `git rebase -i` or `git merge --squash`.\n")
-				fmt.Fprintf(os.Stderr, "Squashing concatenates notes into invalid JSON.\n\n")
-				fmt.Fprintf(os.Stderr, "To fix this, you must re-attribute the AI-generated lines in this commit:\n")
-				fmt.Fprintf(os.Stderr, "  1. Check out the commit: git checkout %s\n", commit[:7])
-				fmt.Fprintf(os.Stderr, "  2. Mark the AI-generated files again: git ai-trail mark <files>\n")
-				fmt.Fprintf(os.Stderr, "  3. Amend the commit: git commit --amend --no-edit\n")
-				fmt.Fprintf(os.Stderr, "  4. Re-record attribution: git ai-trail record\n")
+				fmt.Fprintf(os.Stderr, "\nThis is likely caused by squashing commits with `git rebase -i`.\n")
+				fmt.Fprintf(os.Stderr, "When squashing, git concatenates notes from multiple commits, creating invalid JSON.\n\n")
+				fmt.Fprintf(os.Stderr, "To fix this, re-attribute the AI-generated lines:\n")
+				fmt.Fprintf(os.Stderr, "  1. Mark the AI-generated files: git ai-trail mark <files>\n")
+				fmt.Fprintf(os.Stderr, "  2. Amend the commit with new notes: git -c notes.rewriteMode=ignore commit --amend --no-edit\n")
+				fmt.Fprintf(os.Stderr, "\nAfter fixing, run verification: git ai-trail verify %s^..%s\n", commit[:7], commit[:7])
 				fmt.Fprintf(os.Stderr, "\nWARNING: Do NOT delete the attribution notes, as that would allow unverified AI code through.\n")
 				return nil, fmt.Errorf("unparseable attribution notes (squash corruption)")
 			}
@@ -302,9 +301,9 @@ func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
 		if err != nil && err.Error() != "not found" {
 			if strings.Contains(err.Error(), "invalid character") || strings.Contains(err.Error(), "unexpected") {
 				fmt.Fprintf(os.Stderr, "Error: failed to parse verification notes for %s: %v\n", commit[:7], err)
-				fmt.Fprintf(os.Stderr, "This is likely caused by squashing commits. To fix:\n")
-				fmt.Fprintf(os.Stderr, "  1. Re-verify the commit: git ai-trail verify %s^..%s\n", commit[:7], commit[:7])
-				fmt.Fprintf(os.Stderr, "  2. Or re-attribute and verify (see attribution error above)\n")
+				fmt.Fprintf(os.Stderr, "This is likely caused by squashing commits.\n")
+				fmt.Fprintf(os.Stderr, "To fix, re-verify the commit after fixing attribution notes (see above):\n")
+				fmt.Fprintf(os.Stderr, "  git ai-trail verify %s^..%s\n", commit[:7], commit[:7])
 				return nil, fmt.Errorf("unparseable verification notes (squash corruption)")
 			}
 			fmt.Fprintf(os.Stderr, "Warning: failed to parse verification notes for %s: %v\n", commit[:7], err)

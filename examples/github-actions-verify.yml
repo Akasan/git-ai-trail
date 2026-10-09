@@ -39,8 +39,6 @@ jobs:
         run: go install github.com/Akasan/git-ai-trail@main
 
       - name: Verify AI changes
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git ai-trail verify --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}

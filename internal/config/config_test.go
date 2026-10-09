@@ -56,6 +56,7 @@ func TestConfigLoad(t *testing.T) {
 	defer cleanup()
 
 	t.Run("no config file", func(t *testing.T) {
+		ResetCache()
 		cfg, err := Load()
 		if err != nil {
 			t.Fatalf("Load() error = %v", err)
@@ -66,6 +67,7 @@ func TestConfigLoad(t *testing.T) {
 	})
 
 	t.Run("with config file", func(t *testing.T) {
+		ResetCache()
 		repoRoot, _ := git.GetRepoRoot()
 		configPath := filepath.Join(repoRoot, ConfigFileName)
 
@@ -80,6 +82,7 @@ func TestConfigLoad(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		ResetCache()
 		cfg, err := Load()
 		if err != nil {
 			t.Fatalf("Load() error = %v", err)
@@ -98,6 +101,7 @@ func TestGetVerifyModelPrecedence(t *testing.T) {
 	configPath := filepath.Join(repoRoot, ConfigFileName)
 
 	t.Run("default only", func(t *testing.T) {
+		ResetCache()
 		model := GetVerifyModel()
 		if model != "claude-sonnet-4-5" {
 			t.Errorf("Expected default 'claude-sonnet-4-5', got %q", model)
@@ -105,6 +109,7 @@ func TestGetVerifyModelPrecedence(t *testing.T) {
 	})
 
 	t.Run("repo config overrides default", func(t *testing.T) {
+		ResetCache()
 		testConfig := Config{
 			Verify: VerifyConfig{
 				Model: "claude-haiku-4-5",
@@ -124,6 +129,7 @@ func TestGetVerifyModelPrecedence(t *testing.T) {
 	})
 
 	t.Run("git config overrides repo config", func(t *testing.T) {
+		ResetCache()
 		testConfig := Config{
 			Verify: VerifyConfig{
 				Model: "claude-haiku-4-5",
@@ -135,6 +141,7 @@ func TestGetVerifyModelPrecedence(t *testing.T) {
 		cmd := exec.Command("git", "config", "ai-trail.verifyModel", "claude-sonnet-4-6")
 		_ = cmd.Run()
 
+		ResetCache()
 		model := GetVerifyModel()
 		if model != "claude-sonnet-4-6" {
 			t.Errorf("Expected git config 'claude-sonnet-4-6', got %q", model)
@@ -146,9 +153,11 @@ func TestGetVerifyModelPrecedence(t *testing.T) {
 	})
 
 	t.Run("git config overrides default", func(t *testing.T) {
+		ResetCache()
 		cmd := exec.Command("git", "config", "ai-trail.verifyModel", "claude-sonnet-4-6")
 		_ = cmd.Run()
 
+		ResetCache()
 		model := GetVerifyModel()
 		if model != "claude-sonnet-4-6" {
 			t.Errorf("Expected git config 'claude-sonnet-4-6', got %q", model)
@@ -207,6 +216,7 @@ func TestConfigSource(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ResetCache()
 			_ = exec.Command("git", "config", "--unset", "ai-trail.verifyModel").Run()
 			_ = os.Remove(configPath)
 
@@ -229,6 +239,7 @@ func TestConfigSource(t *testing.T) {
 				}
 			}
 
+			ResetCache()
 			model := GetVerifyModel()
 			if model != tt.wantModel {
 				t.Errorf("GetVerifyModel() = %q, want %q (source: %s)", model, tt.wantModel, tt.wantSource)
@@ -243,6 +254,7 @@ func TestConfigSource(t *testing.T) {
 func TestInvalidJSON(t *testing.T) {
 	_, cleanup := setupTestRepo(t)
 	defer cleanup()
+	ResetCache()
 
 	repoRoot, _ := git.GetRepoRoot()
 	configPath := filepath.Join(repoRoot, ConfigFileName)
