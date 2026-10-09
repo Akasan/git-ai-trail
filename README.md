@@ -312,7 +312,7 @@ git fetch
 
 Use `git ai-trail verify --check` in CI to enforce verification as a required status check.
 
-**GitHub Actions example** (`.github/workflows/verify-ai-changes.yml`):
+**GitHub Actions example** (see `examples/github-actions-verify.yml`):
 
 ```yaml
 name: Verify AI Changes

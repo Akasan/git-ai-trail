@@ -312,7 +312,7 @@ git fetch
 
 CIで`git ai-trail verify --check`を使用して、検証を必須ステータスチェックとして強制します。
 
-**GitHub Actionsの例** (`.github/workflows/verify-ai-changes.yml`):
+**GitHub Actionsの例** (`examples/github-actions-verify.yml` を参照):
 
 ```yaml
 name: Verify AI Changes
