@@ -25,12 +25,19 @@ jobs:
           go-version: '1.22'
 
       - name: Install git-ai-trail
-        run: go install github.com/Akasan/git-ai-trail@v0.2.0
+        run: go install github.com/Akasan/git-ai-trail@main
 
       - name: Verify AI changes
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git ai-trail verify --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
           elif [ "${{ github.event_name }}" = "push" ]; then
-            git ai-trail verify --check ${{ github.event.before }}..${{ github.event.after }}
+            before="${{ github.event.before }}"
+            after="${{ github.event.after }}"
+            # For new branches, before is 0000...
+            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              git ai-trail verify --check "$after" --not --remotes
+            else
+              git ai-trail verify --check "$before..$after"
+            fi
           fi

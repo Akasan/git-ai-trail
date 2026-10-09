@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Akasan/git-ai-trail/internal/config"
 	"github.com/Akasan/git-ai-trail/internal/git"
 	"github.com/Akasan/git-ai-trail/internal/llm"
 	"github.com/Akasan/git-ai-trail/internal/notes"
@@ -62,28 +63,35 @@ func Verify(args []string) error {
 }
 
 func VerifyWithClient(args []string, client llm.Client) error {
-	fs := flag.NewFlagSet("verify", flag.ExitOnError)
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
 	check := fs.Bool("check", false, "Check mode: non-interactive, exit non-zero if unverified AI changes exist")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
-	revRange := "HEAD"
+	var revArgs []string
 	if fs.NArg() > 0 {
-		revRange = fs.Arg(0)
+		revArgs = fs.Args()
 	} else {
 		upstream, err := getUpstreamBranch()
 		if err == nil && upstream != "" {
-			revRange = upstream + "..HEAD"
+			revArgs = []string{upstream + "..HEAD"}
 		} else {
 			mainBranch := findMainBranch()
 			if mainBranch != "" {
-				revRange = mainBranch + "..HEAD"
+				revArgs = []string{mainBranch + "..HEAD"}
+			} else {
+				fmt.Fprintf(os.Stderr, "Warning: no upstream or main branch found, checking all commits on HEAD\n")
+				revArgs = []string{"HEAD", "--not", "--remotes"}
+				commits, err := getCommitsInRange(revArgs...)
+				if err == nil && len(commits) == 0 {
+					revArgs = []string{"HEAD"}
+				}
 			}
 		}
 	}
 
-	commits, err := getCommitsInRange(revRange)
+	commits, err := getCommitsInRange(revArgs...)
 	if err != nil {
 		return fmt.Errorf("failed to get commits: %w", err)
 	}
@@ -123,11 +131,7 @@ func VerifyWithClient(args []string, client llm.Client) error {
 			return err
 		}
 
-		model, err := git.ConfigGet("ai-trail.verifyModel")
-		if err != nil || model == "" {
-			model = "claude-sonnet-4"
-		}
-
+		model := config.GetVerifyModel()
 		client = llm.NewAnthropicClient(apiKey, model)
 	}
 
@@ -136,14 +140,13 @@ func VerifyWithClient(args []string, client llm.Client) error {
 		return err
 	}
 
-	model, err := git.ConfigGet("ai-trail.verifyModel")
-	if err != nil || model == "" {
-		model = "claude-sonnet-4"
-	}
+	model := config.GetVerifyModel()
 
+	fmt.Printf("Using model: %s\n", model)
 	fmt.Printf("Found %d unverified AI-attributed hunk(s)\n\n", len(hunks))
 
 	reader := bufio.NewReader(os.Stdin)
+	verifiedCount := 0
 
 	for i, hunk := range hunks {
 		fmt.Printf("=== Hunk %d/%d ===\n", i+1, len(hunks))
@@ -167,7 +170,6 @@ func VerifyWithClient(args []string, client llm.Client) error {
 		var answer string
 		var verdict bool
 		var reason string
-
 		for {
 			fmt.Print("Your answer (or 'skip' to skip, 'quit' to exit): ")
 			answer, err = reader.ReadString('\n')
@@ -178,8 +180,8 @@ func VerifyWithClient(args []string, client llm.Client) error {
 			answer = strings.TrimSpace(answer)
 
 			if answer == "quit" {
-				fmt.Println("Exiting verification (unverified changes remain)")
-				return fmt.Errorf("verification incomplete")
+				fmt.Printf("\nExiting verification (%d/%d hunks verified)\n", verifiedCount, len(hunks))
+				return fmt.Errorf("verification incomplete: %d unverified hunk(s) remain", len(hunks)-verifiedCount)
 			}
 
 			if answer == "skip" {
@@ -203,6 +205,7 @@ func VerifyWithClient(args []string, client llm.Client) error {
 				if err := saveVerification(hunk, question, answer, verdict, reason, verifier, model); err != nil {
 					return fmt.Errorf("failed to save verification: %w", err)
 				}
+				verifiedCount++
 				break
 			} else {
 				fmt.Printf("✗ FAIL: %s\n\n", reason)
@@ -225,12 +228,18 @@ func VerifyWithClient(args []string, client llm.Client) error {
 		}
 	}
 
-	fmt.Println("Verification complete")
+	if verifiedCount < len(hunks) {
+		fmt.Printf("\nVerification incomplete: %d/%d hunks verified\n", verifiedCount, len(hunks))
+		return fmt.Errorf("%d unverified hunk(s) remain", len(hunks)-verifiedCount)
+	}
+
+	fmt.Println("\nVerification complete: all hunks verified")
 	return nil
 }
 
-func getCommitsInRange(revRange string) ([]string, error) {
-	output, err := git.Run("rev-list", revRange)
+func getCommitsInRange(revArgs ...string) ([]string, error) {
+	cmdArgs := append([]string{"rev-list"}, revArgs...)
+	output, err := git.Run(cmdArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -263,6 +272,12 @@ func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
 	for _, commit := range commits {
 		attr, err := notes.Load(commit)
 		if err != nil {
+			if strings.Contains(err.Error(), "invalid character") || strings.Contains(err.Error(), "unexpected") {
+				fmt.Fprintf(os.Stderr, "Error: failed to parse attribution notes for %s: %v\n", commit[:7], err)
+				fmt.Fprintf(os.Stderr, "This may be caused by squashing commits. Please run:\n")
+				fmt.Fprintf(os.Stderr, "  git notes remove refs/notes/ai-trail %s\n", commit[:7])
+				return nil, fmt.Errorf("unparseable attribution notes (possibly from squash)")
+			}
 			continue
 		}
 

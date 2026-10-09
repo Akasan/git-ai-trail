@@ -197,8 +197,9 @@ Total: 60 lines (45 ai, 3 ai-modified, 12 human) - 80.0% AI
 ### `git ai-trail init`
 
 Initialize repository for AI tracking. This configures:
-- Notes rewrite settings (survive amend/rebase)
-- Fetch refspec for `refs/notes/ai-trail` and `refs/notes/ai-trail-verify`
+- Notes rewrite settings for `refs/notes/ai-trail` (attribution notes survive amend/rebase)
+- Notes rewrite settings for `refs/notes/ai-trail-verify` (verification notes are copied but require re-verification)
+- Fetch refspec for both notes refs
 
 ```bash
 git ai-trail init
@@ -216,14 +217,27 @@ Verify your understanding of AI-attributed changes through interactive Q&A with 
 
 **Requirements:**
 - `ANTHROPIC_API_KEY` environment variable (Claude API key)
-- Optional: configure model via `git config ai-trail.verifyModel` (default: `claude-sonnet-4`)
+
+**Model Configuration (precedence order):**
+1. Personal override: `git config ai-trail.verifyModel <model>` (highest priority)
+2. Team shared: `.git-ai-trail.json` in repository root
+3. Built-in default: `claude-sonnet-4-5`
+
+Create `.git-ai-trail.json` in your repository root to share model settings with your team:
+```json
+{
+  "verify": {
+    "model": "claude-haiku-4-5"
+  }
+}
+```
 
 **Options:**
 - `--check`: Non-interactive check mode; exits non-zero if unverified AI changes exist (for CI/pre-push hooks)
 
 **Examples:**
 ```bash
-# Verify changes on current branch
+# Verify changes on current branch (uses configured model)
 git ai-trail verify
 
 # Verify specific commit range
@@ -232,8 +246,8 @@ git ai-trail verify main..HEAD
 # Check for unverified changes (used by CI)
 git ai-trail verify --check
 
-# Configure model
-git config ai-trail.verifyModel claude-sonnet-4
+# Personal model override (takes precedence over .git-ai-trail.json)
+git config ai-trail.verifyModel claude-sonnet-4-6
 ```
 
 **Interactive Flow:**

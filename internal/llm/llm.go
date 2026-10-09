@@ -24,7 +24,7 @@ type AnthropicClient struct {
 
 func NewAnthropicClient(apiKey, model string) *AnthropicClient {
 	if model == "" {
-		model = "claude-sonnet-4"
+		model = "claude-sonnet-4-5"
 	}
 	return &AnthropicClient{
 		APIKey: apiKey,
@@ -165,29 +165,28 @@ Be strict but fair. A correct high-level understanding is acceptable even if not
 }
 
 func parseVerdict(response string) (pass bool, reason string) {
-	lines := bytes.Split([]byte(response), []byte("\n"))
+	lines := strings.Split(response, "\n")
+	verdictFound := false
 	
 	for _, line := range lines {
-		lineStr := string(bytes.TrimSpace(line))
+		line = strings.TrimSpace(line)
+		line = strings.Trim(line, "*")
+		line = strings.TrimSpace(line)
 		
-		if bytes.Contains(line, []byte("VERDICT:")) {
-			parts := bytes.SplitN(line, []byte("VERDICT:"), 2)
-			if len(parts) == 2 {
-				verdict := string(bytes.TrimSpace(parts[1]))
-				verdict = strings.TrimPrefix(verdict, "*")
-				verdict = strings.TrimSuffix(verdict, "*")
-				verdict = strings.TrimSpace(verdict)
-				pass = verdict == "PASS"
-			}
-		} else if bytes.Contains(line, []byte("REASON:")) {
-			parts := bytes.SplitN(line, []byte("REASON:"), 2)
-			if len(parts) == 2 {
-				reason = string(bytes.TrimSpace(parts[1]))
-			}
-		}
-		
-		if reason == "" && (strings.Contains(lineStr, "VERDICT") || strings.Contains(lineStr, "REASON")) {
-			continue
+		if !verdictFound && strings.HasPrefix(line, "VERDICT:") {
+			verdictPart := strings.TrimPrefix(line, "VERDICT:")
+			verdictPart = strings.TrimSpace(verdictPart)
+			verdictPart = strings.Trim(verdictPart, "*")
+			verdictPart = strings.TrimSpace(verdictPart)
+			verdictPart = strings.TrimRight(verdictPart, ".")
+			verdictPart = strings.TrimSpace(verdictPart)
+			
+			pass = verdictPart == "PASS"
+			verdictFound = true
+		} else if verdictFound && strings.HasPrefix(line, "REASON:") {
+			reason = strings.TrimPrefix(line, "REASON:")
+			reason = strings.TrimSpace(reason)
+			break
 		}
 	}
 	
@@ -207,14 +206,16 @@ func GetAPIKey() (string, error) {
 }
 
 type FakeClient struct {
-	Questions map[string]string
-	Grades    map[string]bool
+	Questions   map[string]string
+	Grades      map[string]bool
+	FailMarkers []string
 }
 
 func NewFakeClient() *FakeClient {
 	return &FakeClient{
-		Questions: make(map[string]string),
-		Grades:    make(map[string]bool),
+		Questions:   make(map[string]string),
+		Grades:      make(map[string]bool),
+		FailMarkers: []string{"banana", "spaceship", "purple"},
 	}
 }
 
@@ -233,5 +234,13 @@ func (f *FakeClient) GradeAnswer(diff string, question string, answer string) (b
 		}
 		return false, "Answer does not demonstrate sufficient understanding", nil
 	}
-	return true, "Default pass", nil
+	
+	answerLower := strings.ToLower(answer)
+	for _, marker := range f.FailMarkers {
+		if strings.Contains(answerLower, marker) {
+			return false, fmt.Sprintf("Answer contains fail marker '%s'", marker), nil
+		}
+	}
+	
+	return true, "Answer demonstrates sufficient understanding", nil
 }

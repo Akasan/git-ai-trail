@@ -99,11 +99,10 @@ func installPrePushHook(hooksDir string) error {
 	isOurHook := err == nil && strings.Contains(string(existingContent), "git-ai-trail pre-push hook")
 
 	if isOurHook {
-		fmt.Println("git-ai-trail pre-push hook is already installed")
-		return nil
+		fmt.Println("Updating git-ai-trail pre-push hook to latest version")
 	}
 
-	if err == nil {
+	if err == nil && !isOurHook {
 		if _, err := os.Stat(backupPath); err == nil {
 			backupContent, err := os.ReadFile(backupPath)
 			if err == nil && string(backupContent) != string(existingContent) {

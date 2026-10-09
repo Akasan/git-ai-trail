@@ -197,8 +197,9 @@ Total: 60 lines (45 ai, 3 ai-modified, 12 human) - 80.0% AI
 ### `git ai-trail init`
 
 AI追跡のためにリポジトリを初期化します。これにより以下が設定されます:
-- notesの書き換え設定（amend/rebaseで保持）
-- `refs/notes/ai-trail` と `refs/notes/ai-trail-verify` のfetch refspec
+- `refs/notes/ai-trail`のnotesの書き換え設定（帰属notesはamend/rebaseで保持）
+- `refs/notes/ai-trail-verify`のnotesの書き換え設定（検証notesはコピーされますが再検証が必要）
+- 両方のnotes refsのfetch refspec
 
 ```bash
 git ai-trail init
@@ -216,14 +217,27 @@ LLMとの対話的なQ&Aを通じて、AI帰属変更の理解度を検証しま
 
 **必要要件:**
 - `ANTHROPIC_API_KEY` 環境変数（Claude APIキー）
-- オプション: `git config ai-trail.verifyModel` でモデルを設定（デフォルト: `claude-sonnet-4`）
+
+**モデル設定（優先順位順）:**
+1. 個人設定: `git config ai-trail.verifyModel <model>`（最優先）
+2. チーム共有: リポジトリルートの `.git-ai-trail.json`
+3. 組み込みデフォルト: `claude-sonnet-4-5`
+
+チームでモデル設定を共有するには、リポジトリルートに `.git-ai-trail.json` を作成します:
+```json
+{
+  "verify": {
+    "model": "claude-haiku-4-5"
+  }
+}
+```
 
 **オプション:**
 - `--check`: 非対話チェックモード。未検証のAI変更が存在する場合、非ゼロで終了（CI/pre-pushフック用）
 
 **例:**
 ```bash
-# 現在のブランチの変更を検証
+# 現在のブランチの変更を検証（設定されたモデルを使用）
 git ai-trail verify
 
 # 特定のコミット範囲を検証
@@ -232,8 +246,8 @@ git ai-trail verify main..HEAD
 # 未検証変更をチェック（CIで使用）
 git ai-trail verify --check
 
-# モデルを設定
-git config ai-trail.verifyModel claude-sonnet-4
+# 個人のモデル設定（.git-ai-trail.json より優先）
+git config ai-trail.verifyModel claude-sonnet-4-6
 ```
 
 **対話フロー:**
