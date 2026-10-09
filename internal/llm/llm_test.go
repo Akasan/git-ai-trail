@@ -180,7 +180,7 @@ func TestGetAPIKey(t *testing.T) {
 			name:     "unknown provider",
 			provider: "unknown",
 			wantErr:  true,
-			errMsg:   "unknown provider: unknown",
+			errMsg:   "unknown provider: unknown (supported: anthropic, openai, xai)",
 		},
 	}
 

@@ -259,6 +259,106 @@ func TestConfigSource(t *testing.T) {
 	}
 }
 
+func TestGetVerifyBaseURL(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	repoRoot, _ := git.GetRepoRoot()
+	configPath := filepath.Join(repoRoot, ConfigFileName)
+
+	tests := []struct {
+		name       string
+		envVar     string
+		gitConfig  string
+		repoConfig string
+		want       string
+	}{
+		{
+			name: "none",
+			want: "",
+		},
+		{
+			name:      "from env",
+			envVar:    "https://custom.com/v1",
+			gitConfig: "https://git.com/v1",
+			want:      "https://custom.com/v1",
+		},
+		{
+			name:      "from git config",
+			gitConfig: "https://git.com/v1",
+			want:      "https://git.com/v1",
+		},
+		{
+			name:       "repo config ignored for security",
+			repoConfig: "http://evil.com/v1",
+			want:       "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ResetCache()
+			
+			oldEnv := os.Getenv("GIT_AI_TRAIL_BASE_URL")
+			defer os.Setenv("GIT_AI_TRAIL_BASE_URL", oldEnv)
+			
+			if tt.envVar != "" {
+				os.Setenv("GIT_AI_TRAIL_BASE_URL", tt.envVar)
+			} else {
+				os.Unsetenv("GIT_AI_TRAIL_BASE_URL")
+			}
+
+			_ = exec.Command("git", "config", "--unset", "ai-trail.verifyBaseURL").Run()
+			if tt.gitConfig != "" {
+				_ = exec.Command("git", "config", "ai-trail.verifyBaseURL", tt.gitConfig).Run()
+			}
+
+			_ = os.Remove(configPath)
+			if tt.repoConfig != "" {
+				cfg := Config{
+					Verify: VerifyConfig{
+						BaseURL: tt.repoConfig,
+					},
+				}
+				data, _ := json.Marshal(cfg)
+				_ = os.WriteFile(configPath, data, 0644)
+			}
+
+			ResetCache()
+			got := GetVerifyBaseURL()
+
+			if got != tt.want {
+				t.Errorf("GetVerifyBaseURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidateBaseURL(t *testing.T) {
+	tests := []struct {
+		name      string
+		baseURL   string
+		provider  string
+		wantError bool
+	}{
+		{"empty is ok", "", "openai", false},
+		{"https is ok", "https://example.com/v1", "openai", false},
+		{"localhost http is ok", "http://localhost:8080/v1", "openai", false},
+		{"127.0.0.1 http is ok", "http://127.0.0.1:8080/v1", "openai", false},
+		{"plain http not ok", "http://example.com/v1", "openai", true},
+		{"invalid url", "not a url", "openai", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateBaseURL(tt.baseURL, tt.provider)
+			if (err != nil) != tt.wantError {
+				t.Errorf("ValidateBaseURL() error = %v, wantError %v", err, tt.wantError)
+			}
+		})
+	}
+}
+
 func TestInvalidJSON(t *testing.T) {
 	_, cleanup := setupTestRepo(t)
 	defer cleanup()

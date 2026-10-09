@@ -228,8 +228,8 @@ LLMとの対話的なQ&Aを通じて、AI帰属変更の理解度を検証しま
 
 サポートされているプロバイダ:
 - `anthropic`（デフォルト）: Claudeモデル、デフォルト `claude-sonnet-4-5` ([Messages API](https://docs.anthropic.com/en/api/messages))
-- `openai`: GPTモデル、デフォルト `gpt-4o` ([Chat Completions](https://platform.openai.com/docs/api-reference/chat))
-- `xai`: Grokモデル、デフォルト `grok-2-latest` ([xAI API](https://docs.x.ai/))
+- `openai`: GPTモデル、デフォルト `gpt-6.1-sol` ([Chat Completions](https://platform.openai.com/docs/api-reference/chat), [GPT-6.1-sol](https://platform.openai.com/docs/models/gpt-6.1-sol))
+- `xai`: Grokモデル、デフォルト `grok-4.7` ([xAI API](https://docs.x.ai/), [Grok-4.7](https://docs.x.ai/docs/models/grok-4.7))
 
 プロバイダが指定されていない場合、モデル名から推論されます（`claude-*` → anthropic、`gpt-*`/`o1-*`/`o3-*` → openai、`grok-*` → xai）。
 
@@ -238,7 +238,7 @@ LLMとの対話的なQ&Aを通じて、AI帰属変更の理解度を検証しま
 {
   "verify": {
     "provider": "openai",
-    "model": "gpt-4o"
+    "model": "gpt-6.1-sol"
   }
 }
 ```
@@ -261,7 +261,12 @@ git ai-trail verify --check
 
 # 個人のプロバイダ/モデル設定（.git-ai-trail.json より優先）
 git config ai-trail.verifyProvider openai
-git config ai-trail.verifyModel gpt-4o-mini
+git config ai-trail.verifyModel gpt-6-luna
+
+# BaseURL設定（セキュリティ上、git configまたは環境変数のみ、リポジトリファイルからは不可）
+git config ai-trail.verifyBaseURL "https://custom-endpoint.com/v1"
+# または環境変数
+# export GIT_AI_TRAIL_BASE_URL="https://custom-endpoint.com/v1"
 ```
 
 **対話フロー:**

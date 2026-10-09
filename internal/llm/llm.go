@@ -115,7 +115,12 @@ func (c *AnthropicClient) callAPI(prompt string) (string, error) {
 		return "", fmt.Errorf("no content in response")
 	}
 
-	return apiResp.Content[0].Text, nil
+	text := apiResp.Content[0].Text
+	if text == "" {
+		return "", fmt.Errorf("empty content in response")
+	}
+
+	return text, nil
 }
 
 func (c *AnthropicClient) GenerateQuestion(diff string) (string, error) {
@@ -209,7 +214,7 @@ func GetAPIKey(provider string) (string, error) {
 	case "xai":
 		envVar = "XAI_API_KEY"
 	default:
-		return "", fmt.Errorf("unknown provider: %s", provider)
+		return "", fmt.Errorf("unknown provider: %s (supported: anthropic, openai, xai)", provider)
 	}
 	
 	apiKey := os.Getenv(envVar)
@@ -321,7 +326,12 @@ func (c *OpenAIClient) callAPI(prompt string) (string, error) {
 		return "", fmt.Errorf("no choices in response")
 	}
 
-	return apiResp.Choices[0].Message.Content, nil
+	content := apiResp.Choices[0].Message.Content
+	if content == "" {
+		return "", fmt.Errorf("empty content in response")
+	}
+
+	return content, nil
 }
 
 func (c *OpenAIClient) GenerateQuestion(diff string) (string, error) {
@@ -431,7 +441,11 @@ func (c *XAIClient) callAPI(prompt string) (string, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+		bodyPreview := string(body)
+		if len(bodyPreview) > 500 {
+			bodyPreview = bodyPreview[:500] + "..."
+		}
+		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, bodyPreview)
 	}
 
 	var apiResp openaiResponse
@@ -447,7 +461,12 @@ func (c *XAIClient) callAPI(prompt string) (string, error) {
 		return "", fmt.Errorf("no choices in response")
 	}
 
-	return apiResp.Choices[0].Message.Content, nil
+	content := apiResp.Choices[0].Message.Content
+	if content == "" {
+		return "", fmt.Errorf("empty content in response")
+	}
+
+	return content, nil
 }
 
 func (c *XAIClient) GenerateQuestion(diff string) (string, error) {

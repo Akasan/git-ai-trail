@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -136,10 +137,31 @@ func VerifyWithClient(args []string, client llm.Client) error {
 		return fmt.Errorf("unverified AI-attributed changes found")
 	}
 
-	var provider, model string
+	var provider, model, baseURL string
 	if client == nil {
 		provider, model = config.ResolveProviderAndModel()
-		baseURL := config.GetVerifyBaseURL()
+		if provider == "" || model == "" {
+			return fmt.Errorf("provider and model configuration conflict: verify.provider implies one provider but verify.model implies another. Please ensure they are consistent")
+		}
+		
+		baseURL = config.GetVerifyBaseURL()
+		
+		if err := config.ValidateBaseURL(baseURL, provider); err != nil {
+			return err
+		}
+		
+		fmt.Fprintf(os.Stderr, "Using provider: %s, model: %s\n", provider, model)
+		if baseURL != "" {
+			defaultBaseURLs := map[string]string{
+				"anthropic": "https://api.anthropic.com/v1",
+				"openai":    "https://api.openai.com/v1",
+				"xai":       "https://api.x.ai/v1",
+			}
+			if baseURL != defaultBaseURLs[provider] {
+				u, _ := url.Parse(baseURL)
+				fmt.Fprintf(os.Stderr, "Using custom baseURL: %s\n", u.Host)
+			}
+		}
 		
 		var err error
 		client, err = llm.NewClient(provider, model, baseURL)
@@ -148,6 +170,11 @@ func VerifyWithClient(args []string, client llm.Client) error {
 		}
 	} else {
 		provider, model = config.ResolveProviderAndModel()
+		if provider == "" || model == "" {
+			provider = "anthropic"
+			model = config.GetDefaultModel(provider)
+		}
+		fmt.Fprintf(os.Stderr, "Using provider: %s, model: %s\n", provider, model)
 	}
 
 	verifier, err := getVerifierIdentity()
@@ -292,7 +319,7 @@ func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
 				fmt.Fprintf(os.Stderr, "To fix this, re-attribute the AI-generated lines:\n")
 				fmt.Fprintf(os.Stderr, "  1. Mark the AI-generated files: git ai-trail mark <files>\n")
 				fmt.Fprintf(os.Stderr, "  2. Amend the commit with new notes: git -c notes.rewriteMode=ignore commit --amend --no-edit\n")
-				fmt.Fprintf(os.Stderr, "\nAfter fixing, run verification: git ai-trail verify %s^..%s\n", commit[:7], commit[:7])
+				fmt.Fprintf(os.Stderr, "\nAfter fixing, run verification: git ai-trail verify\n")
 				fmt.Fprintf(os.Stderr, "\nWARNING: Do NOT delete the attribution notes, as that would allow unverified AI code through.\n")
 				return nil, fmt.Errorf("unparseable attribution notes (squash corruption)")
 			}

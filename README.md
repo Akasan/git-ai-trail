@@ -228,8 +228,8 @@ Verify your understanding of AI-attributed changes through interactive Q&A with 
 
 Supported providers:
 - `anthropic` (default): Claude models, default `claude-sonnet-4-5` ([Messages API](https://docs.anthropic.com/en/api/messages))
-- `openai`: GPT models, default `gpt-4o` ([Chat Completions](https://platform.openai.com/docs/api-reference/chat))
-- `xai`: Grok models, default `grok-2-latest` ([xAI API](https://docs.x.ai/))
+- `openai`: GPT models, default `gpt-6.1-sol` ([Chat Completions](https://platform.openai.com/docs/api-reference/chat), [GPT-6.1-sol](https://platform.openai.com/docs/models/gpt-6.1-sol))
+- `xai`: Grok models, default `grok-4.7` ([xAI API](https://docs.x.ai/), [Grok-4.7](https://docs.x.ai/docs/models/grok-4.7))
 
 Provider is inferred from model name if not specified (`claude-*` → anthropic, `gpt-*`/`o1-*`/`o3-*` → openai, `grok-*` → xai).
 
@@ -238,7 +238,7 @@ Create `.git-ai-trail.json` in your repository root to share settings with your 
 {
   "verify": {
     "provider": "openai",
-    "model": "gpt-4o"
+    "model": "gpt-6.1-sol"
   }
 }
 ```
@@ -261,7 +261,7 @@ git ai-trail verify --check
 
 # Personal provider/model override (takes precedence over .git-ai-trail.json)
 git config ai-trail.verifyProvider openai
-git config ai-trail.verifyModel gpt-4o-mini
+git config ai-trail.verifyModel gpt-6-luna
 ```
 
 **Interactive Flow:**

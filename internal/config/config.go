@@ -3,8 +3,10 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/Akasan/git-ai-trail/internal/git"
@@ -109,14 +111,14 @@ func GetVerifyModel() string {
 }
 
 func GetVerifyBaseURL() string {
+	envBaseURL := os.Getenv("GIT_AI_TRAIL_BASE_URL")
+	if envBaseURL != "" {
+		return envBaseURL
+	}
+
 	personalBaseURL, err := git.ConfigGet("ai-trail.verifyBaseURL")
 	if err == nil && personalBaseURL != "" {
 		return personalBaseURL
-	}
-
-	cfg, err := Load()
-	if err == nil && cfg.Verify.BaseURL != "" {
-		return cfg.Verify.BaseURL
 	}
 
 	return ""
@@ -124,21 +126,26 @@ func GetVerifyBaseURL() string {
 
 func InferProvider(model string) string {
 	if model == "" {
+		return ""
+	}
+	
+	lower := strings.ToLower(model)
+	
+	if hasPrefix(lower, "claude") {
 		return "anthropic"
 	}
 	
-	lower := model
-	if hasPrefix(lower, "claude-") || hasPrefix(lower, "claude") {
-		return "anthropic"
-	}
-	if hasPrefix(lower, "gpt-") || hasPrefix(lower, "o1-") || hasPrefix(lower, "o3-") {
+	if hasPrefix(lower, "gpt-") || hasPrefix(lower, "chatgpt-") || 
+	   lower == "o1" || lower == "o3" || lower == "o4" ||
+	   hasPrefix(lower, "o1-") || hasPrefix(lower, "o3-") || hasPrefix(lower, "o4-") {
 		return "openai"
 	}
-	if hasPrefix(lower, "grok-") {
+	
+	if hasPrefix(lower, "grok") {
 		return "xai"
 	}
 	
-	return "anthropic"
+	return ""
 }
 
 func hasPrefix(s, prefix string) bool {
@@ -151,9 +158,9 @@ func hasPrefix(s, prefix string) bool {
 func GetDefaultModel(provider string) string {
 	switch provider {
 	case "openai":
-		return "gpt-4o"
+		return "gpt-6.1-sol"
 	case "xai":
-		return "grok-2-latest"
+		return "grok-4.7"
 	case "anthropic":
 		return "claude-sonnet-4-5"
 	default:
@@ -161,12 +168,39 @@ func GetDefaultModel(provider string) string {
 	}
 }
 
+func ValidateBaseURL(baseURL, provider string) error {
+	if baseURL == "" {
+		return nil
+	}
+
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return fmt.Errorf("invalid baseURL: %w", err)
+	}
+
+	if u.Scheme != "https" && !strings.HasPrefix(u.Host, "localhost:") && !strings.HasPrefix(u.Host, "127.0.0.1:") && u.Host != "localhost" && u.Host != "127.0.0.1" {
+		return fmt.Errorf("baseURL must use https (got %s). Only localhost is allowed over http for testing", u.Scheme)
+	}
+
+	return nil
+}
+
 func ResolveProviderAndModel() (provider, model string) {
 	provider = GetVerifyProvider()
 	model = GetVerifyModel()
 	
 	if model != "" && provider == "" {
-		provider = InferProvider(model)
+		inferredProvider := InferProvider(model)
+		if inferredProvider != "" {
+			provider = inferredProvider
+		}
+	}
+	
+	if provider != "" && model != "" {
+		inferredFromModel := InferProvider(model)
+		if inferredFromModel != "" && inferredFromModel != provider {
+			return "", ""
+		}
 	}
 	
 	if provider == "" {
