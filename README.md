@@ -216,23 +216,34 @@ Verify your understanding of AI-attributed changes through interactive Q&A with 
 - Default range: commits on current branch not in upstream/main
 
 **Requirements:**
-- `ANTHROPIC_API_KEY` environment variable (Claude API key)
+- API key environment variable for your chosen provider:
+  - `ANTHROPIC_API_KEY` for Claude (default)
+  - `OPENAI_API_KEY` for GPT
+  - `XAI_API_KEY` for Grok
 
-**Model Configuration (precedence order):**
-1. Personal override: `git config ai-trail.verifyModel <model>` (highest priority)
+**Provider & Model Configuration (precedence order):**
+1. Personal override: `git config ai-trail.verifyProvider/verifyModel <value>` (highest priority)
 2. Team shared: `.git-ai-trail.json` in repository root
-3. Built-in default: `claude-sonnet-4-5`
+3. Built-in defaults: `anthropic` / `claude-sonnet-4-5`
 
-Create `.git-ai-trail.json` in your repository root to share model settings with your team:
+Supported providers:
+- `anthropic` (default): Claude models, default `claude-sonnet-4-5` ([Messages API](https://docs.anthropic.com/en/api/messages))
+- `openai`: GPT models, default `gpt-4o` ([Chat Completions](https://platform.openai.com/docs/api-reference/chat))
+- `xai`: Grok models, default `grok-2-latest` ([xAI API](https://docs.x.ai/))
+
+Provider is inferred from model name if not specified (`claude-*` → anthropic, `gpt-*`/`o1-*`/`o3-*` → openai, `grok-*` → xai).
+
+Create `.git-ai-trail.json` in your repository root to share settings with your team:
 ```json
 {
   "verify": {
-    "model": "claude-haiku-4-5"
+    "provider": "openai",
+    "model": "gpt-4o"
   }
 }
 ```
 
-**Note:** This file is read from the working tree, so a pull request can change the verification model. Consider using CODEOWNERS to require review for changes to `.git-ai-trail.json`. The `--check` mode used in CI does not invoke the LLM, so model changes only affect interactive verification.
+**Note:** This file is read from the working tree, so a pull request can change the verification provider/model. Consider using CODEOWNERS to require review for changes to `.git-ai-trail.json`. The `--check` mode used in CI does not invoke the LLM, so provider/model changes only affect interactive verification.
 
 **Options:**
 - `--check`: Non-interactive check mode; exits non-zero if unverified AI changes exist (for CI/pre-push hooks)
@@ -248,8 +259,9 @@ git ai-trail verify main..HEAD
 # Check for unverified changes (used by CI)
 git ai-trail verify --check
 
-# Personal model override (takes precedence over .git-ai-trail.json)
-git config ai-trail.verifyModel claude-sonnet-4-6
+# Personal provider/model override (takes precedence over .git-ai-trail.json)
+git config ai-trail.verifyProvider openai
+git config ai-trail.verifyModel gpt-4o-mini
 ```
 
 **Interactive Flow:**

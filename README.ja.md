@@ -216,23 +216,34 @@ LLMとの対話的なQ&Aを通じて、AI帰属変更の理解度を検証しま
 - デフォルト範囲: 現在のブランチでupstream/mainに含まれないコミット
 
 **必要要件:**
-- `ANTHROPIC_API_KEY` 環境変数（Claude APIキー）
+- 選択したプロバイダのAPIキー環境変数:
+  - `ANTHROPIC_API_KEY` Claude用（デフォルト）
+  - `OPENAI_API_KEY` GPT用
+  - `XAI_API_KEY` Grok用
 
-**モデル設定（優先順位順）:**
-1. 個人設定: `git config ai-trail.verifyModel <model>`（最優先）
+**プロバイダ＆モデル設定（優先順位順）:**
+1. 個人設定: `git config ai-trail.verifyProvider/verifyModel <値>`（最優先）
 2. チーム共有: リポジトリルートの `.git-ai-trail.json`
-3. 組み込みデフォルト: `claude-sonnet-4-5`
+3. デフォルト: `anthropic` / `claude-sonnet-4-5`
 
-チームでモデル設定を共有するには、リポジトリルートに `.git-ai-trail.json` を作成します:
+サポートされているプロバイダ:
+- `anthropic`（デフォルト）: Claudeモデル、デフォルト `claude-sonnet-4-5` ([Messages API](https://docs.anthropic.com/en/api/messages))
+- `openai`: GPTモデル、デフォルト `gpt-4o` ([Chat Completions](https://platform.openai.com/docs/api-reference/chat))
+- `xai`: Grokモデル、デフォルト `grok-2-latest` ([xAI API](https://docs.x.ai/))
+
+プロバイダが指定されていない場合、モデル名から推論されます（`claude-*` → anthropic、`gpt-*`/`o1-*`/`o3-*` → openai、`grok-*` → xai）。
+
+チームで設定を共有するには、リポジトリルートに `.git-ai-trail.json` を作成します:
 ```json
 {
   "verify": {
-    "model": "claude-haiku-4-5"
+    "provider": "openai",
+    "model": "gpt-4o"
   }
 }
 ```
 
-**注意:** このファイルは作業ツリーから読み込まれるため、プルリクエストで検証モデルを変更できます。`.git-ai-trail.json` の変更にレビューを必須にするため、CODEOWNERSの使用を検討してください。CIで使用される `--check` モードはLLMを呼び出さないため、モデル変更は対話的な検証にのみ影響します。
+**注意:** このファイルは作業ツリーから読み込まれるため、プルリクエストで検証プロバイダ/モデルを変更できます。`.git-ai-trail.json` の変更にレビューを必須にするため、CODEOWNERSの使用を検討してください。CIで使用される `--check` モードはLLMを呼び出さないため、プロバイダ/モデル変更は対話的な検証にのみ影響します。
 
 **オプション:**
 - `--check`: 非対話チェックモード。未検証のAI変更が存在する場合、非ゼロで終了（CI/pre-pushフック用）

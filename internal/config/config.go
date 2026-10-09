@@ -17,7 +17,9 @@ type Config struct {
 }
 
 type VerifyConfig struct {
-	Model string `json:"model,omitempty"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	BaseURL  string `json:"baseURL,omitempty"`
 }
 
 var (
@@ -78,6 +80,20 @@ func Load() (*Config, error) {
 	return cachedConfig, loadErr
 }
 
+func GetVerifyProvider() string {
+	personalProvider, err := git.ConfigGet("ai-trail.verifyProvider")
+	if err == nil && personalProvider != "" {
+		return personalProvider
+	}
+
+	cfg, err := Load()
+	if err == nil && cfg.Verify.Provider != "" {
+		return cfg.Verify.Provider
+	}
+
+	return ""
+}
+
 func GetVerifyModel() string {
 	personalModel, err := git.ConfigGet("ai-trail.verifyModel")
 	if err == nil && personalModel != "" {
@@ -89,5 +105,77 @@ func GetVerifyModel() string {
 		return cfg.Verify.Model
 	}
 
-	return "claude-sonnet-4-5"
+	return ""
+}
+
+func GetVerifyBaseURL() string {
+	personalBaseURL, err := git.ConfigGet("ai-trail.verifyBaseURL")
+	if err == nil && personalBaseURL != "" {
+		return personalBaseURL
+	}
+
+	cfg, err := Load()
+	if err == nil && cfg.Verify.BaseURL != "" {
+		return cfg.Verify.BaseURL
+	}
+
+	return ""
+}
+
+func InferProvider(model string) string {
+	if model == "" {
+		return "anthropic"
+	}
+	
+	lower := model
+	if hasPrefix(lower, "claude-") || hasPrefix(lower, "claude") {
+		return "anthropic"
+	}
+	if hasPrefix(lower, "gpt-") || hasPrefix(lower, "o1-") || hasPrefix(lower, "o3-") {
+		return "openai"
+	}
+	if hasPrefix(lower, "grok-") {
+		return "xai"
+	}
+	
+	return "anthropic"
+}
+
+func hasPrefix(s, prefix string) bool {
+	if len(s) < len(prefix) {
+		return false
+	}
+	return s[:len(prefix)] == prefix
+}
+
+func GetDefaultModel(provider string) string {
+	switch provider {
+	case "openai":
+		return "gpt-4o"
+	case "xai":
+		return "grok-2-latest"
+	case "anthropic":
+		return "claude-sonnet-4-5"
+	default:
+		return "claude-sonnet-4-5"
+	}
+}
+
+func ResolveProviderAndModel() (provider, model string) {
+	provider = GetVerifyProvider()
+	model = GetVerifyModel()
+	
+	if model != "" && provider == "" {
+		provider = InferProvider(model)
+	}
+	
+	if provider == "" {
+		provider = "anthropic"
+	}
+	
+	if model == "" {
+		model = GetDefaultModel(provider)
+	}
+	
+	return provider, model
 }

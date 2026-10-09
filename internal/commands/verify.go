@@ -136,14 +136,18 @@ func VerifyWithClient(args []string, client llm.Client) error {
 		return fmt.Errorf("unverified AI-attributed changes found")
 	}
 
+	var provider, model string
 	if client == nil {
-		apiKey, err := llm.GetAPIKey()
+		provider, model = config.ResolveProviderAndModel()
+		baseURL := config.GetVerifyBaseURL()
+		
+		var err error
+		client, err = llm.NewClient(provider, model, baseURL)
 		if err != nil {
 			return err
 		}
-
-		model := config.GetVerifyModel()
-		client = llm.NewAnthropicClient(apiKey, model)
+	} else {
+		provider, model = config.ResolveProviderAndModel()
 	}
 
 	verifier, err := getVerifierIdentity()
@@ -151,9 +155,7 @@ func VerifyWithClient(args []string, client llm.Client) error {
 		return err
 	}
 
-	model := config.GetVerifyModel()
-
-	fmt.Printf("Using model: %s\n", model)
+	fmt.Printf("Using provider: %s, model: %s\n", provider, model)
 	fmt.Printf("Found %d unverified AI-attributed hunk(s)\n\n", len(hunks))
 
 	reader := bufio.NewReader(os.Stdin)

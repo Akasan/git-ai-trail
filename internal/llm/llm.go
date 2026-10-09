@@ -199,12 +199,319 @@ func parseVerdict(response string) (pass bool, reason string) {
 	return pass, reason
 }
 
-func GetAPIKey() (string, error) {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
+func GetAPIKey(provider string) (string, error) {
+	var envVar string
+	switch provider {
+	case "anthropic":
+		envVar = "ANTHROPIC_API_KEY"
+	case "openai":
+		envVar = "OPENAI_API_KEY"
+	case "xai":
+		envVar = "XAI_API_KEY"
+	default:
+		return "", fmt.Errorf("unknown provider: %s", provider)
+	}
+	
+	apiKey := os.Getenv(envVar)
 	if apiKey == "" {
-		return "", fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
+		return "", fmt.Errorf("%s environment variable not set", envVar)
 	}
 	return apiKey, nil
+}
+
+type OpenAIClient struct {
+	APIKey     string
+	Model      string
+	BaseURL    string
+	HTTPClient *http.Client
+}
+
+func NewOpenAIClient(apiKey, model, baseURL string) *OpenAIClient {
+	if model == "" {
+		model = "gpt-4o"
+	}
+	if baseURL == "" {
+		baseURL = "https://api.openai.com/v1"
+	}
+	return &OpenAIClient{
+		APIKey:  apiKey,
+		Model:   model,
+		BaseURL: baseURL,
+		HTTPClient: &http.Client{
+			Timeout: 60 * time.Second,
+		},
+	}
+}
+
+type openaiRequest struct {
+	Model    string          `json:"model"`
+	Messages []openaiMessage `json:"messages"`
+}
+
+type openaiMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type openaiResponse struct {
+	Choices []openaiChoice `json:"choices"`
+	Error   *openaiError   `json:"error,omitempty"`
+}
+
+type openaiChoice struct {
+	Message openaiMessage `json:"message"`
+}
+
+type openaiError struct {
+	Message string `json:"message"`
+	Type    string `json:"type"`
+	Code    string `json:"code"`
+}
+
+func (c *OpenAIClient) callAPI(prompt string) (string, error) {
+	reqBody := openaiRequest{
+		Model: c.Model,
+		Messages: []openaiMessage{
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := c.BaseURL + "/chat/completions"
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp openaiResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if apiResp.Error != nil {
+		return "", fmt.Errorf("API error: %s", apiResp.Error.Message)
+	}
+
+	if len(apiResp.Choices) == 0 {
+		return "", fmt.Errorf("no choices in response")
+	}
+
+	return apiResp.Choices[0].Message.Content, nil
+}
+
+func (c *OpenAIClient) GenerateQuestion(diff string) (string, error) {
+	prompt := fmt.Sprintf(`You are reviewing an AI-generated code change. Generate 1-2 short, specific questions that would test whether the developer understands this change.
+
+Focus on:
+- What the code does and why it's needed
+- Edge cases or potential issues
+- How it interacts with the rest of the system
+
+Code diff:
+%s
+
+Return only the questions, one per line. Keep questions concise and specific.`, diff)
+
+	return c.callAPI(prompt)
+}
+
+func (c *OpenAIClient) GradeAnswer(diff string, question string, answer string) (bool, string, error) {
+	prompt := fmt.Sprintf(`You are reviewing whether a developer understands an AI-generated code change.
+
+Code diff:
+%s
+
+Question asked: %s
+
+Developer's answer: %s
+
+Does the answer demonstrate understanding of the code change? Consider:
+- Does it show they understand what the code does?
+- Do they recognize potential issues or edge cases?
+- Is the explanation accurate (even if brief)?
+
+Respond in this exact format:
+VERDICT: [PASS or FAIL]
+REASON: [one sentence explanation]
+
+Be strict but fair. A correct high-level understanding is acceptable even if not detailed.`, diff, question, answer)
+
+	response, err := c.callAPI(prompt)
+	if err != nil {
+		return false, "", err
+	}
+
+	verdict, reason := parseVerdict(response)
+	return verdict, reason, nil
+}
+
+type XAIClient struct {
+	APIKey     string
+	Model      string
+	BaseURL    string
+	HTTPClient *http.Client
+}
+
+func NewXAIClient(apiKey, model, baseURL string) *XAIClient {
+	if model == "" {
+		model = "grok-2-latest"
+	}
+	if baseURL == "" {
+		baseURL = "https://api.x.ai/v1"
+	}
+	return &XAIClient{
+		APIKey:  apiKey,
+		Model:   model,
+		BaseURL: baseURL,
+		HTTPClient: &http.Client{
+			Timeout: 60 * time.Second,
+		},
+	}
+}
+
+func (c *XAIClient) callAPI(prompt string) (string, error) {
+	reqBody := openaiRequest{
+		Model: c.Model,
+		Messages: []openaiMessage{
+			{
+				Role:    "user",
+				Content: prompt,
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := c.BaseURL + "/chat/completions"
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp openaiResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return "", fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if apiResp.Error != nil {
+		return "", fmt.Errorf("API error: %s", apiResp.Error.Message)
+	}
+
+	if len(apiResp.Choices) == 0 {
+		return "", fmt.Errorf("no choices in response")
+	}
+
+	return apiResp.Choices[0].Message.Content, nil
+}
+
+func (c *XAIClient) GenerateQuestion(diff string) (string, error) {
+	prompt := fmt.Sprintf(`You are reviewing an AI-generated code change. Generate 1-2 short, specific questions that would test whether the developer understands this change.
+
+Focus on:
+- What the code does and why it's needed
+- Edge cases or potential issues
+- How it interacts with the rest of the system
+
+Code diff:
+%s
+
+Return only the questions, one per line. Keep questions concise and specific.`, diff)
+
+	return c.callAPI(prompt)
+}
+
+func (c *XAIClient) GradeAnswer(diff string, question string, answer string) (bool, string, error) {
+	prompt := fmt.Sprintf(`You are reviewing whether a developer understands an AI-generated code change.
+
+Code diff:
+%s
+
+Question asked: %s
+
+Developer's answer: %s
+
+Does the answer demonstrate understanding of the code change? Consider:
+- Does it show they understand what the code does?
+- Do they recognize potential issues or edge cases?
+- Is the explanation accurate (even if brief)?
+
+Respond in this exact format:
+VERDICT: [PASS or FAIL]
+REASON: [one sentence explanation]
+
+Be strict but fair. A correct high-level understanding is acceptable even if not detailed.`, diff, question, answer)
+
+	response, err := c.callAPI(prompt)
+	if err != nil {
+		return false, "", err
+	}
+
+	verdict, reason := parseVerdict(response)
+	return verdict, reason, nil
+}
+
+func NewClient(provider, model, baseURL string) (Client, error) {
+	apiKey, err := GetAPIKey(provider)
+	if err != nil {
+		return nil, err
+	}
+
+	switch provider {
+	case "anthropic":
+		return NewAnthropicClient(apiKey, model), nil
+	case "openai":
+		return NewOpenAIClient(apiKey, model, baseURL), nil
+	case "xai":
+		return NewXAIClient(apiKey, model, baseURL), nil
+	default:
+		return nil, fmt.Errorf("unknown provider: %s (supported: anthropic, openai, xai)", provider)
+	}
 }
 
 type FakeClient struct {

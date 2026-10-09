@@ -103,8 +103,16 @@ func TestGetVerifyModelPrecedence(t *testing.T) {
 	t.Run("default only", func(t *testing.T) {
 		ResetCache()
 		model := GetVerifyModel()
+		if model != "" {
+			t.Errorf("Expected empty string when nothing configured, got %q", model)
+		}
+		
+		provider, model := ResolveProviderAndModel()
+		if provider != "anthropic" {
+			t.Errorf("Expected default provider 'anthropic', got %q", provider)
+		}
 		if model != "claude-sonnet-4-5" {
-			t.Errorf("Expected default 'claude-sonnet-4-5', got %q", model)
+			t.Errorf("Expected default model 'claude-sonnet-4-5', got %q", model)
 		}
 	})
 
@@ -186,8 +194,8 @@ func TestConfigSource(t *testing.T) {
 	}{
 		{
 			name:       "default",
-			wantModel:  "claude-sonnet-4-5",
-			wantSource: "default",
+			wantModel:  "",
+			wantSource: "none (returns empty)",
 		},
 		{
 			name:          "repo config",
@@ -276,7 +284,15 @@ func TestInvalidJSON(t *testing.T) {
 	}
 	
 	model := GetVerifyModel()
-	if model != "claude-sonnet-4-5" {
-		t.Errorf("Expected default model for invalid JSON, got %q", model)
+	if model != "" {
+		t.Errorf("Expected empty model for invalid JSON (defaults handled by ResolveProviderAndModel), got %q", model)
+	}
+	
+	provider, resolvedModel := ResolveProviderAndModel()
+	if provider != "anthropic" {
+		t.Errorf("Expected default provider 'anthropic', got %q", provider)
+	}
+	if resolvedModel != "claude-sonnet-4-5" {
+		t.Errorf("Expected default model 'claude-sonnet-4-5' from ResolveProviderAndModel, got %q", resolvedModel)
 	}
 }
