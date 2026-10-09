@@ -1,0 +1,36 @@
+name: Verify AI Changes
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch AI attribution notes
+        run: |
+          git fetch origin refs/notes/ai-trail:refs/notes/ai-trail || true
+          git fetch origin refs/notes/ai-trail-verify:refs/notes/ai-trail-verify || true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install git-ai-trail
+        run: go install github.com/Akasan/git-ai-trail@latest
+
+      - name: Verify AI changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git ai-trail verify --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+          else
+            git ai-trail verify --check HEAD~1..HEAD
+          fi

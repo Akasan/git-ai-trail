@@ -120,13 +120,22 @@ git ai-trail record abc123
 
 ### `git ai-trail install-hooks`
 
-post-commitフックをインストールして、帰属を自動的に記録します。
+AI追跡を自動化するgitフックをインストールします:
+- **post-commit**: 各コミット後に帰属を自動記録
+- **pre-push**: 未検証のAI変更を含むpushをブロック
 
 ```bash
 git ai-trail install-hooks
 ```
 
+**post-commitフック:**
 インストール後は、コミット前に`git ai-trail mark`を実行するだけで済みます。帰属は自動的に記録されます。
+
+**pre-pushフック:**
+push前に`git ai-trail verify --check`を実行し、すべてのAI帰属変更が検証されていることを確認します。未検証変更が検出された場合、pushは拒否され、`git ai-trail verify`を実行するようメッセージが表示されます。
+
+**フックチェーン:**
+既にpost-commitまたはpre-pushフックがある場合、それらはバックアップ（`.backup`サフィックス）され、チェーン化されます（git-ai-trailフックの後に呼び出されます）。
 
 ### `git ai-trail blame <file>`
 
@@ -189,11 +198,57 @@ Total: 60 lines (45 ai, 3 ai-modified, 12 human) - 80.0% AI
 
 AI追跡のためにリポジトリを初期化します。これにより以下が設定されます:
 - notesの書き換え設定（amend/rebaseで保持）
-- `refs/notes/ai-trail`のfetch refspec
+- `refs/notes/ai-trail` と `refs/notes/ai-trail-verify` のfetch refspec
 
 ```bash
 git ai-trail init
 ```
+
+### `git ai-trail verify [<rev-range>]`
+
+LLMとの対話的なQ&Aを通じて、AI帰属変更の理解度を検証します。
+
+**概要:**
+- 未検証のAI帰属変更（`ai`または`ai-modified`行を含むhunk）をリスト表示
+- 各hunkについて、理解度をテストする1〜2問の質問を生成
+- 回答を採点し、結果を`refs/notes/ai-trail-verify`に記録
+- デフォルト範囲: 現在のブランチでupstream/mainに含まれないコミット
+
+**必要要件:**
+- `ANTHROPIC_API_KEY` 環境変数（Claude APIキー）
+- オプション: `git config ai-trail.verifyModel` でモデルを設定（デフォルト: `claude-3-5-sonnet-20241022`）
+
+**オプション:**
+- `--check`: 非対話チェックモード。未検証のAI変更が存在する場合、非ゼロで終了（CI/pre-pushフック用）
+
+**例:**
+```bash
+# 現在のブランチの変更を検証
+git ai-trail verify
+
+# 特定のコミット範囲を検証
+git ai-trail verify main..HEAD
+
+# 未検証変更をチェック（CIで使用）
+git ai-trail verify --check
+
+# モデルを設定
+git config ai-trail.verifyModel claude-3-5-sonnet-20241022
+```
+
+**対話フロー:**
+1. ツールがAI帰属コードhunkを表示
+2. LLMが変更についての質問を生成
+3. 自分の言葉で回答
+4. LLMが回答を採点（合否と理由）
+5. 不合格: 再試行またはスキップ
+6. 合格: 検証が記録される
+
+**検証ストレージ:**
+- git notes `refs/notes/ai-trail-verify` に保存
+- コミットハッシュ、ファイルパス、行範囲でキー化
+- amend/rebaseで保持（設定時）
+- プッシュ方法: `git push origin refs/notes/ai-trail-verify`
 
 ## 帰属スキーマ
 
@@ -235,14 +290,15 @@ git ai-trail init
 
 ## チームとの共有
 
-AI帰属notesをプッシュしてチームと共有します:
+AI帰属と検証notesをプッシュしてチームと共有します:
 
 ```bash
-# notesをプッシュ
-git push origin refs/notes/ai-trail
+# 両方のnotes refsをプッシュ
+git push origin refs/notes/ai-trail refs/notes/ai-trail-verify
 
 # notesをプル
 git fetch origin refs/notes/ai-trail:refs/notes/ai-trail
+git fetch origin refs/notes/ai-trail-verify:refs/notes/ai-trail-verify
 ```
 
 `init`コマンドはfetchを自動的に設定します。チームメンバーは以下を実行する必要があります:
@@ -251,6 +307,52 @@ git fetch origin refs/notes/ai-trail:refs/notes/ai-trail
 git ai-trail init
 git fetch
 ```
+
+## CI統合
+
+CIで`git ai-trail verify --check`を使用して、検証を必須ステータスチェックとして強制します。
+
+**GitHub Actionsの例** (`.github/workflows/verify-ai-changes.yml`):
+
+```yaml
+name: Verify AI Changes
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch AI attribution notes
+        run: |
+          git fetch origin refs/notes/ai-trail:refs/notes/ai-trail || true
+          git fetch origin refs/notes/ai-trail-verify:refs/notes/ai-trail-verify || true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install git-ai-trail
+        run: go install github.com/Akasan/git-ai-trail@latest
+
+      - name: Verify AI changes
+        run: |
+          git ai-trail verify --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+```
+
+**必須チェックにする:**
+1. Settings → Branches → Branch protection rules for `main` に移動
+2. "Require status checks to pass" を有効化
+3. "verify" を必須チェックに追加
+
+**注意:** pre-pushフックはローカルでの保護を提供しますが、フックはバイパス可能なため、CIが最終的なゲートです。
 
 ## エディタ/エージェント統合
 
@@ -368,11 +470,7 @@ git config ai-trail.fuzzyThreshold
 
 ### ロードマップ
 
-- [ ] **検証コマンド**: 作成者がAI変更を説明するまでCIでマージをブロック
-  ```bash
-  # 将来の機能
-  git ai-trail verify <commit> --explanation "OAuthフローをレビューして..."
-  ```
+- [x] **検証コマンド**: 作成者がAI変更を理解していることを証明するまでCIでマージをブロック
 - [ ] **ファジー行マッチング**: フォーマットされた/移動されたコードのより良い処理
 - [ ] **IDEプラグイン**: ネイティブCursor、VS Code、IntelliJ統合
 - [ ] **マージ競合解決**: スマートな帰属マージ

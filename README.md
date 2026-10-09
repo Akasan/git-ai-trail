@@ -120,13 +120,22 @@ git ai-trail record abc123
 
 ### `git ai-trail install-hooks`
 
-Install post-commit hook to automatically record attribution.
+Install git hooks to automate AI tracking:
+- **post-commit**: automatically records attribution after each commit
+- **pre-push**: blocks pushes with unverified AI changes
 
 ```bash
 git ai-trail install-hooks
 ```
 
+**Post-commit hook:**
 After installation, you only need to run `git ai-trail mark` before committing; attribution will be recorded automatically.
+
+**Pre-push hook:**
+Before pushing, runs `git ai-trail verify --check` to ensure all AI-attributed changes have been verified. If unverified changes are detected, the push is rejected with a message to run `git ai-trail verify`.
+
+**Hook chaining:**
+If you already have post-commit or pre-push hooks, they are backed up (`.backup` suffix) and chained (called after git-ai-trail hooks).
 
 ### `git ai-trail blame <file>`
 
@@ -189,11 +198,57 @@ Total: 60 lines (45 ai, 3 ai-modified, 12 human) - 80.0% AI
 
 Initialize repository for AI tracking. This configures:
 - Notes rewrite settings (survive amend/rebase)
-- Fetch refspec for `refs/notes/ai-trail`
+- Fetch refspec for `refs/notes/ai-trail` and `refs/notes/ai-trail-verify`
 
 ```bash
 git ai-trail init
 ```
+
+### `git ai-trail verify [<rev-range>]`
+
+Verify your understanding of AI-attributed changes through interactive Q&A with an LLM.
+
+**Overview:**
+- Lists unverified AI-attributed changes (hunks with `ai` or `ai-modified` lines)
+- For each hunk, generates 1-2 questions to test understanding
+- Grades your answers and records the results in `refs/notes/ai-trail-verify`
+- Default range: commits on current branch not in upstream/main
+
+**Requirements:**
+- `ANTHROPIC_API_KEY` environment variable (Claude API key)
+- Optional: configure model via `git config ai-trail.verifyModel` (default: `claude-3-5-sonnet-20241022`)
+
+**Options:**
+- `--check`: Non-interactive check mode; exits non-zero if unverified AI changes exist (for CI/pre-push hooks)
+
+**Examples:**
+```bash
+# Verify changes on current branch
+git ai-trail verify
+
+# Verify specific commit range
+git ai-trail verify main..HEAD
+
+# Check for unverified changes (used by CI)
+git ai-trail verify --check
+
+# Configure model
+git config ai-trail.verifyModel claude-3-5-sonnet-20241022
+```
+
+**Interactive Flow:**
+1. Tool displays AI-attributed code hunk
+2. LLM generates questions about the change
+3. You answer in your own words
+4. LLM grades your answer (pass/fail with reason)
+5. On fail: retry or skip
+6. On pass: verification recorded
+
+**Verification Storage:**
+- Stored in git notes `refs/notes/ai-trail-verify`
+- Keyed by commit hash, file path, and line range
+- Survives amend/rebase (when configured)
+- Should be pushed with: `git push origin refs/notes/ai-trail-verify`
 
 ## Attribution Schema
 
@@ -235,14 +290,15 @@ Attribution data is stored as JSON in git notes under `refs/notes/ai-trail`.
 
 ## Sharing with Your Team
 
-Push AI attribution notes to share with your team:
+Push AI attribution and verification notes to share with your team:
 
 ```bash
-# Push notes
-git push origin refs/notes/ai-trail
+# Push both notes refs
+git push origin refs/notes/ai-trail refs/notes/ai-trail-verify
 
 # Pull notes
 git fetch origin refs/notes/ai-trail:refs/notes/ai-trail
+git fetch origin refs/notes/ai-trail-verify:refs/notes/ai-trail-verify
 ```
 
 The `init` command configures fetch automatically. Team members should run:
@@ -251,6 +307,52 @@ The `init` command configures fetch automatically. Team members should run:
 git ai-trail init
 git fetch
 ```
+
+## CI Integration
+
+Use `git ai-trail verify --check` in CI to enforce verification as a required status check.
+
+**GitHub Actions example** (`.github/workflows/verify-ai-changes.yml`):
+
+```yaml
+name: Verify AI Changes
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch AI attribution notes
+        run: |
+          git fetch origin refs/notes/ai-trail:refs/notes/ai-trail || true
+          git fetch origin refs/notes/ai-trail-verify:refs/notes/ai-trail-verify || true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install git-ai-trail
+        run: go install github.com/Akasan/git-ai-trail@latest
+
+      - name: Verify AI changes
+        run: |
+          git ai-trail verify --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+```
+
+**Make it required:**
+1. Go to Settings → Branches → Branch protection rules for `main`
+2. Enable "Require status checks to pass"
+3. Add "verify" to required checks
+
+**Note:** The pre-push hook provides local protection, but CI is the definitive gate since hooks can be bypassed.
 
 ## Editor/Agent Integration
 
@@ -368,11 +470,7 @@ git config ai-trail.fuzzyThreshold
 
 ### Roadmap
 
-- [ ] **Verify command**: Block merges in CI until author explains AI changes
-  ```bash
-  # Future feature
-  git ai-trail verify <commit> --explanation "I reviewed the OAuth flow and..."
-  ```
+- [x] **Verify command**: Block merges in CI until author demonstrates understanding of AI changes
 - [ ] **Improved matching**: Better handling of moved/refactored code blocks
 - [ ] **IDE plugins**: Native VS Code, IntelliJ integration
 - [ ] **Merge conflict resolution**: Smart attribution merging
