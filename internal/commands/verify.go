@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -65,6 +66,7 @@ func Verify(args []string) error {
 func VerifyWithClient(args []string, client llm.Client) error {
 	var checkFlag bool
 	var language string
+	var excludes []string
 	var revArgs []string
 
 	for i := 0; i < len(args); i++ {
@@ -80,6 +82,14 @@ func VerifyWithClient(args []string, client llm.Client) error {
 			language = args[i]
 		case strings.HasPrefix(arg, "--lang="):
 			language = strings.TrimPrefix(arg, "--lang=")
+		case arg == "--exclude":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--exclude requires a pattern")
+			}
+			i++
+			excludes = append(excludes, args[i])
+		case strings.HasPrefix(arg, "--exclude="):
+			excludes = append(excludes, strings.TrimPrefix(arg, "--exclude="))
 		default:
 			revArgs = append(revArgs, arg)
 		}
@@ -87,6 +97,12 @@ func VerifyWithClient(args []string, client llm.Client) error {
 
 	if language == "" {
 		language = config.GetVerifyLanguage()
+	}
+
+	excludes = append(excludes, config.GetVerifyExcludes()...)
+	excludeMatchers, err := compileExcludes(excludes)
+	if err != nil {
+		return err
 	}
 
 	if len(revArgs) == 0 {
@@ -131,9 +147,13 @@ func VerifyWithClient(args []string, client llm.Client) error {
 		return nil
 	}
 
-	hunks, err := collectUnverifiedHunks(commits)
+	hunks, excludedCount, err := collectUnverifiedHunks(commits, excludeMatchers)
 	if err != nil {
 		return err
+	}
+
+	if excludedCount > 0 {
+		fmt.Fprintf(os.Stderr, "Excluded %d unverified AI-attributed hunk(s) matching exclude patterns\n", excludedCount)
 	}
 
 	if len(hunks) == 0 {
@@ -321,8 +341,9 @@ func getCommitsInRange(revArgs ...string) ([]string, error) {
 	return result, nil
 }
 
-func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
+func collectUnverifiedHunks(commits []string, excludes []*regexp.Regexp) ([]Hunk, int, error) {
 	var hunks []Hunk
+	var excludedCount int
 	var hasParseErrors bool
 
 	for _, commit := range commits {
@@ -337,7 +358,7 @@ func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
 				fmt.Fprintf(os.Stderr, "  2. Amend the commit with new notes: git -c notes.rewriteMode=ignore commit --amend --no-edit\n")
 				fmt.Fprintf(os.Stderr, "\nAfter fixing, run verification: git ai-trail verify\n")
 				fmt.Fprintf(os.Stderr, "\nWARNING: Do NOT delete the attribution notes, as that would allow unverified AI code through.\n")
-				return nil, fmt.Errorf("unparseable attribution notes (squash corruption)")
+				return nil, 0, fmt.Errorf("unparseable attribution notes (squash corruption)")
 			}
 			continue
 		}
@@ -349,7 +370,7 @@ func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
 				fmt.Fprintf(os.Stderr, "This is likely caused by squashing commits.\n")
 				fmt.Fprintf(os.Stderr, "To fix, re-verify the commit after fixing attribution notes (see above):\n")
 				fmt.Fprintf(os.Stderr, "  git ai-trail verify %s^..%s\n", commit[:7], commit[:7])
-				return nil, fmt.Errorf("unparseable verification notes (squash corruption)")
+				return nil, 0, fmt.Errorf("unparseable verification notes (squash corruption)")
 			}
 			fmt.Fprintf(os.Stderr, "Warning: failed to parse verification notes for %s: %v\n", commit[:7], err)
 			hasParseErrors = true
@@ -399,16 +420,85 @@ func collectUnverifiedHunks(commits []string) ([]Hunk, error) {
 					}
 				}
 
+				if isExcluded(filePath, excludes) {
+					excludedCount++
+					continue
+				}
+
 				hunks = append(hunks, hunk)
 			}
 		}
 	}
 
 	if hasParseErrors {
-		return hunks, fmt.Errorf("verification notes contain parsing errors (possibly from squash/rebase); please run 'git notes remove refs/notes/ai-trail-verify <commit>' for affected commits and re-verify")
+		return hunks, excludedCount, fmt.Errorf("verification notes contain parsing errors (possibly from squash/rebase); please run 'git notes remove refs/notes/ai-trail-verify <commit>' for affected commits and re-verify")
 	}
 
-	return hunks, nil
+	return hunks, excludedCount, nil
+}
+
+// compileExcludes converts gitignore-style patterns into regexps matched
+// against repository-relative paths:
+//   - a pattern without "/" matches a file or directory name at any depth
+//   - a leading "/" anchors the pattern to the repository root
+//   - a trailing "/" matches everything under that directory
+//   - "*" and "?" do not cross "/", "**" does
+func compileExcludes(patterns []string) ([]*regexp.Regexp, error) {
+	var res []*regexp.Regexp
+	for _, pattern := range patterns {
+		p := strings.TrimSpace(pattern)
+		if p == "" {
+			continue
+		}
+
+		dirOnly := strings.HasSuffix(p, "/")
+		p = strings.TrimSuffix(p, "/")
+		anchored := strings.Contains(p, "/")
+		p = strings.TrimPrefix(p, "/")
+
+		var buf strings.Builder
+		buf.WriteString("^")
+		if !anchored {
+			buf.WriteString("(?:.*/)?")
+		}
+		for i := 0; i < len(p); i++ {
+			switch {
+			case strings.HasPrefix(p[i:], "**/"):
+				buf.WriteString("(?:.*/)?")
+				i += 2
+			case strings.HasPrefix(p[i:], "**"):
+				buf.WriteString(".*")
+				i++
+			case p[i] == '*':
+				buf.WriteString("[^/]*")
+			case p[i] == '?':
+				buf.WriteString("[^/]")
+			default:
+				buf.WriteString(regexp.QuoteMeta(p[i : i+1]))
+			}
+		}
+		if dirOnly {
+			buf.WriteString("/.*$")
+		} else {
+			buf.WriteString("(?:/.*)?$")
+		}
+
+		re, err := regexp.Compile(buf.String())
+		if err != nil {
+			return nil, fmt.Errorf("invalid exclude pattern %q: %w", pattern, err)
+		}
+		res = append(res, re)
+	}
+	return res, nil
+}
+
+func isExcluded(filePath string, excludes []*regexp.Regexp) bool {
+	for _, re := range excludes {
+		if re.MatchString(filePath) {
+			return true
+		}
+	}
+	return false
 }
 
 func mergeAdjacentRanges(ranges []notes.LineRange) []notes.LineRange {

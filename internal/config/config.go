@@ -22,7 +22,8 @@ type VerifyConfig struct {
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
 	BaseURL  string `json:"baseURL,omitempty"`
-	Language string `json:"language,omitempty"`
+	Language string   `json:"language,omitempty"`
+	Exclude  []string `json:"exclude,omitempty"`
 }
 
 var (
@@ -123,6 +124,24 @@ func GetVerifyLanguage() string {
 	}
 
 	return "English"
+}
+
+// GetVerifyExcludes returns exclude patterns from both git config and the
+// repository config file. Sources are combined rather than overridden.
+func GetVerifyExcludes() []string {
+	var patterns []string
+
+	personal, err := git.ConfigGetAll("ai-trail.verifyExclude")
+	if err == nil {
+		patterns = append(patterns, personal...)
+	}
+
+	cfg, err := Load()
+	if err == nil {
+		patterns = append(patterns, cfg.Verify.Exclude...)
+	}
+
+	return patterns
 }
 
 func GetVerifyBaseURL() string {

@@ -209,6 +209,43 @@ func TestGetVerifyLanguagePrecedence(t *testing.T) {
 	}
 }
 
+func TestGetVerifyExcludesCombinesSources(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	repoRoot, _ := git.GetRepoRoot()
+	configPath := filepath.Join(repoRoot, ConfigFileName)
+
+	ResetCache()
+	if got := GetVerifyExcludes(); len(got) != 0 {
+		t.Errorf("Expected no excludes by default, got %v", got)
+	}
+
+	data, _ := json.Marshal(Config{Verify: VerifyConfig{Exclude: []string{"*.md"}}})
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(configPath)
+	for _, v := range []string{"vendor/", "testdata/"} {
+		if err := exec.Command("git", "config", "--add", "ai-trail.verifyExclude", v).Run(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ResetCache()
+	got := GetVerifyExcludes()
+	want := []string{"vendor/", "testdata/", "*.md"}
+	if len(got) != len(want) {
+		t.Fatalf("Expected %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Expected %v, got %v", want, got)
+			break
+		}
+	}
+}
+
 func TestConfigSource(t *testing.T) {
 	_, cleanup := setupTestRepo(t)
 	defer cleanup()

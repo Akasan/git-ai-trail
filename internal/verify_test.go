@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Akasan/git-ai-trail/internal/commands"
+	"github.com/Akasan/git-ai-trail/internal/config"
 	"github.com/Akasan/git-ai-trail/internal/git"
 	"github.com/Akasan/git-ai-trail/internal/llm"
 	"github.com/Akasan/git-ai-trail/internal/notes"
@@ -584,5 +585,72 @@ func TestVerifyLangFlag(t *testing.T) {
 	err := commands.VerifyWithClient([]string{"--check", "--lang"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "--lang requires a value") {
 		t.Errorf("Expected missing value error, got %v", err)
+	}
+}
+
+func TestVerifyExclude(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	initial := "initial.go"
+	if err := os.WriteFile(initial, []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "add", initial)
+	runCmd(t, ".", "git", "commit", "-m", "Initial")
+
+	if err := os.MkdirAll("docs", 0755); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"docs/guide.md": "# Guide\n\nAI written docs\n",
+		"calc.go":       "package main\n\nfunc multiply(a, b int) int {\n    return a * b\n}\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(name, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		runCmd(t, ".", "git", "add", name)
+	}
+	if err := commands.Mark([]string{"--model", "test", "docs/guide.md", "calc.go"}); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "commit", "-m", "Add docs and calc")
+	if err := commands.Record([]string{}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := commands.VerifyWithClient([]string{"--check", "--exclude", "docs/", "HEAD~1..HEAD"}, nil)
+	if err == nil {
+		t.Fatal("Expected --check to fail: calc.go is not excluded")
+	}
+
+	err = commands.VerifyWithClient([]string{"--check", "--exclude", "docs/", "--exclude=*.go", "HEAD~1..HEAD"}, nil)
+	if err != nil {
+		t.Errorf("Expected --check to pass with all files excluded, got: %v", err)
+	}
+
+	runCmd(t, ".", "git", "config", "--add", "ai-trail.verifyExclude", "docs/")
+	runCmd(t, ".", "git", "config", "--add", "ai-trail.verifyExclude", "calc.go")
+	config.ResetCache()
+	err = commands.VerifyWithClient([]string{"--check", "HEAD~1..HEAD"}, nil)
+	if err != nil {
+		t.Errorf("Expected --check to pass with git config excludes, got: %v", err)
+	}
+	runCmd(t, ".", "git", "config", "--unset-all", "ai-trail.verifyExclude")
+
+	if err := os.WriteFile(".git-ai-trail.json", []byte(`{"verify":{"exclude":["*.md"]}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	config.ResetCache()
+	defer config.ResetCache()
+	err = commands.VerifyWithClient([]string{"--check", "--exclude", "calc.go", "HEAD~1..HEAD"}, nil)
+	if err != nil {
+		t.Errorf("Expected repo config + flag excludes to combine, got: %v", err)
+	}
+
+	err = commands.VerifyWithClient([]string{"--check", "--exclude"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "--exclude requires a pattern") {
+		t.Errorf("Expected missing pattern error, got %v", err)
 	}
 }

@@ -110,6 +110,7 @@ Mark options:
 Verify options:
   --check                Exit non-zero if unverified AI changes exist (no LLM calls)
   --lang LANGUAGE        Language for questions and feedback (default: English)
+  --exclude PATTERN      Skip files matching gitignore-style PATTERN (repeatable)
 
 Examples:
   git ai-trail mark --model gpt-4 --agent cursor

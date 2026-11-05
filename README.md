@@ -248,12 +248,38 @@ Create `.git-ai-trail.json` in your repository root to share settings with your 
 **Options:**
 - `--check`: Non-interactive check mode; exits non-zero if unverified AI changes exist (for CI/pre-push hooks)
 - `--lang <language>`: Language for generated questions and grading feedback (e.g. `Japanese`). Default: `English`
+- `--exclude <pattern>`: Skip AI-attributed changes in files matching the pattern. Repeatable
 
 **Question Language (precedence order):**
 1. `--lang` flag
 2. Personal: `git config ai-trail.verifyLanguage <language>`
 3. Team shared: `"language"` under `"verify"` in `.git-ai-trail.json`
 4. Default: `English`
+
+**Excluding Files:**
+
+Exclude patterns from all of these sources are combined:
+1. `--exclude` flag (repeatable)
+2. Personal: `git config --add ai-trail.verifyExclude <pattern>` (multi-valued)
+3. Team shared: `"exclude"` array under `"verify"` in `.git-ai-trail.json`
+
+```json
+{
+  "verify": {
+    "exclude": ["*.md", "vendor/", "docs/**/*.txt", "/generated.go"]
+  }
+}
+```
+
+Patterns use gitignore-style matching against repository-relative paths:
+- No `/` (e.g. `*.md`, `testdata`): matches a file or directory name at any depth
+- Leading `/` or a `/` in the middle (e.g. `/main.go`, `docs/*.md`): anchored to the repository root
+- Trailing `/` (e.g. `vendor/`): matches everything under that directory
+- `*` and `?` do not match `/`; `**` matches across directories
+
+Excluded hunks are not shown or verified, and `--check` passes for them. The number of excluded hunks is printed to stderr.
+
+**Warning:** Unlike provider/model, exclude patterns **do** affect `--check` in CI. A pull request that adds `"exclude": ["**"]` to `.git-ai-trail.json` would skip verification for all files. Protect `.git-ai-trail.json` with CODEOWNERS.
 
 **Examples:**
 ```bash

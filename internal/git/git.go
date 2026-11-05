@@ -235,6 +235,21 @@ func ConfigGet(key string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+func ConfigGetAll(key string) ([]string, error) {
+	cmd := exec.Command("git", "config", "--get-all", key)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var values []string
+	for _, line := range strings.Split(string(out), "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			values = append(values, line)
+		}
+	}
+	return values, nil
+}
+
 func ShowFile(commit, path string) ([]byte, error) {
 	cmd := exec.Command("git", "show", commit+":"+path)
 	return cmd.Output()

@@ -248,12 +248,38 @@ LLMとの対話的なQ&Aを通じて、AI帰属変更の理解度を検証しま
 **オプション:**
 - `--check`: 非対話チェックモード。未検証のAI変更が存在する場合、非ゼロで終了（CI/pre-pushフック用）
 - `--lang <言語>`: 生成される質問と採点フィードバックの言語（例: `Japanese`）。デフォルト: `English`
+- `--exclude <パターン>`: パターンに一致するファイルのAI帰属変更を検証対象から除外。複数指定可
 
 **質問言語（優先順位順）:**
 1. `--lang` フラグ
 2. 個人設定: `git config ai-trail.verifyLanguage <言語>`
 3. チーム共有: `.git-ai-trail.json` の `"verify"` 内の `"language"`
 4. デフォルト: `English`
+
+**ファイルの除外:**
+
+以下のすべてのソースの除外パターンが合算されます:
+1. `--exclude` フラグ（複数指定可）
+2. 個人設定: `git config --add ai-trail.verifyExclude <パターン>`（複数値）
+3. チーム共有: `.git-ai-trail.json` の `"verify"` 内の `"exclude"` 配列
+
+```json
+{
+  "verify": {
+    "exclude": ["*.md", "vendor/", "docs/**/*.txt", "/generated.go"]
+  }
+}
+```
+
+パターンはリポジトリ相対パスに対してgitignore風にマッチします:
+- `/` を含まない（例: `*.md`、`testdata`）: 任意の階層のファイル名・ディレクトリ名に一致
+- 先頭または途中に `/` を含む（例: `/main.go`、`docs/*.md`）: リポジトリルート基準
+- 末尾が `/`（例: `vendor/`）: そのディレクトリ配下すべてに一致
+- `*` と `?` は `/` に一致しない。`**` はディレクトリをまたいで一致
+
+除外されたhunkは表示・検証されず、`--check` も通過します。除外されたhunk数はstderrに表示されます。
+
+**警告:** プロバイダ/モデルと異なり、除外パターンはCIの `--check` に**影響します**。プルリクエストで `.git-ai-trail.json` に `"exclude": ["**"]` を追加すると全ファイルの検証がスキップされます。CODEOWNERSで `.git-ai-trail.json` を保護してください。
 
 **例:**
 ```bash
