@@ -64,14 +64,29 @@ func Verify(args []string) error {
 
 func VerifyWithClient(args []string, client llm.Client) error {
 	var checkFlag bool
+	var language string
 	var revArgs []string
-	
-	for _, arg := range args {
-		if arg == "--check" {
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--check":
 			checkFlag = true
-		} else {
+		case arg == "--lang":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--lang requires a value")
+			}
+			i++
+			language = args[i]
+		case strings.HasPrefix(arg, "--lang="):
+			language = strings.TrimPrefix(arg, "--lang=")
+		default:
 			revArgs = append(revArgs, arg)
 		}
+	}
+
+	if language == "" {
+		language = config.GetVerifyLanguage()
 	}
 
 	if len(revArgs) == 0 {
@@ -164,7 +179,7 @@ func VerifyWithClient(args []string, client llm.Client) error {
 		}
 		
 		var err error
-		client, err = llm.NewClient(provider, model, baseURL)
+		client, err = llm.NewClient(provider, model, baseURL, language)
 		if err != nil {
 			return err
 		}
@@ -183,6 +198,7 @@ func VerifyWithClient(args []string, client llm.Client) error {
 	}
 
 	fmt.Printf("Using provider: %s, model: %s\n", provider, model)
+	fmt.Printf("Question language: %s\n", language)
 	fmt.Printf("Found %d unverified AI-attributed hunk(s)\n\n", len(hunks))
 
 	reader := bufio.NewReader(os.Stdin)

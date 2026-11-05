@@ -247,6 +247,13 @@ Create `.git-ai-trail.json` in your repository root to share settings with your 
 
 **Options:**
 - `--check`: Non-interactive check mode; exits non-zero if unverified AI changes exist (for CI/pre-push hooks)
+- `--lang <language>`: Language for generated questions and grading feedback (e.g. `Japanese`). Default: `English`
+
+**Question Language (precedence order):**
+1. `--lang` flag
+2. Personal: `git config ai-trail.verifyLanguage <language>`
+3. Team shared: `"language"` under `"verify"` in `.git-ai-trail.json`
+4. Default: `English`
 
 **Examples:**
 ```bash
@@ -262,6 +269,10 @@ git ai-trail verify --check
 # Personal provider/model override (takes precedence over .git-ai-trail.json)
 git config ai-trail.verifyProvider openai
 git config ai-trail.verifyModel gpt-6-luna
+
+# Ask questions in Japanese
+git ai-trail verify --lang Japanese
+git config ai-trail.verifyLanguage Japanese
 ```
 
 **Interactive Flow:**

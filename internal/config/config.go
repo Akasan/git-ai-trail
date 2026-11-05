@@ -22,6 +22,7 @@ type VerifyConfig struct {
 	Provider string `json:"provider,omitempty"`
 	Model    string `json:"model,omitempty"`
 	BaseURL  string `json:"baseURL,omitempty"`
+	Language string `json:"language,omitempty"`
 }
 
 var (
@@ -108,6 +109,20 @@ func GetVerifyModel() string {
 	}
 
 	return ""
+}
+
+func GetVerifyLanguage() string {
+	personalLanguage, err := git.ConfigGet("ai-trail.verifyLanguage")
+	if err == nil && personalLanguage != "" {
+		return personalLanguage
+	}
+
+	cfg, err := Load()
+	if err == nil && cfg.Verify.Language != "" {
+		return cfg.Verify.Language
+	}
+
+	return "English"
 }
 
 func GetVerifyBaseURL() string {

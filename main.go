@@ -107,6 +107,10 @@ Mark options:
   --stdin-json           Read file path from JSON on stdin (for editor hooks)
   --quiet, -q            Suppress output
 
+Verify options:
+  --check                Exit non-zero if unverified AI changes exist (no LLM calls)
+  --lang LANGUAGE        Language for questions and feedback (default: English)
+
 Examples:
   git ai-trail mark --model gpt-4 --agent cursor
   git ai-trail status
@@ -115,6 +119,7 @@ Examples:
   git ai-trail log --since="1 week ago"
   git ai-trail verify
   git ai-trail verify --check
+  git ai-trail verify --lang Japanese
 `
 	fmt.Print(usage)
 }

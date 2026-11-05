@@ -16,9 +16,56 @@ type Client interface {
 	GradeAnswer(diff string, question string, answer string) (bool, string, error)
 }
 
+const DefaultLanguage = "English"
+
+func questionPrompt(diff, language string) string {
+	if language == "" {
+		language = DefaultLanguage
+	}
+	return fmt.Sprintf(`You are reviewing an AI-generated code change. Generate 1-2 short, specific questions that would test whether the developer understands this change.
+
+Focus on:
+- What the code does and why it's needed
+- Edge cases or potential issues
+- How it interacts with the rest of the system
+
+Code diff:
+%s
+
+Write the questions in %s.
+Return only the questions, one per line. Keep questions concise and specific.`, diff, language)
+}
+
+func gradePrompt(diff, question, answer, language string) string {
+	if language == "" {
+		language = DefaultLanguage
+	}
+	return fmt.Sprintf(`You are reviewing whether a developer understands an AI-generated code change.
+
+Code diff:
+%s
+
+Question asked: %s
+
+Developer's answer: %s
+
+Does the answer demonstrate understanding of the code change? Consider:
+- Does it show they understand what the code does?
+- Do they recognize potential issues or edge cases?
+- Is the explanation accurate (even if brief)?
+
+Respond in this exact format:
+VERDICT: [PASS or FAIL]
+REASON: [one sentence explanation]
+
+Keep the "VERDICT:" and "REASON:" labels and the PASS/FAIL value in English, but write the explanation in %s.
+Be strict but fair. A correct high-level understanding is acceptable even if not detailed.`, diff, question, answer, language)
+}
+
 type AnthropicClient struct {
 	APIKey     string
 	Model      string
+	Language   string
 	HTTPClient *http.Client
 }
 
@@ -124,41 +171,13 @@ func (c *AnthropicClient) callAPI(prompt string) (string, error) {
 }
 
 func (c *AnthropicClient) GenerateQuestion(diff string) (string, error) {
-	prompt := fmt.Sprintf(`You are reviewing an AI-generated code change. Generate 1-2 short, specific questions that would test whether the developer understands this change.
-
-Focus on:
-- What the code does and why it's needed
-- Edge cases or potential issues
-- How it interacts with the rest of the system
-
-Code diff:
-%s
-
-Return only the questions, one per line. Keep questions concise and specific.`, diff)
+	prompt := questionPrompt(diff, c.Language)
 
 	return c.callAPI(prompt)
 }
 
 func (c *AnthropicClient) GradeAnswer(diff string, question string, answer string) (bool, string, error) {
-	prompt := fmt.Sprintf(`You are reviewing whether a developer understands an AI-generated code change.
-
-Code diff:
-%s
-
-Question asked: %s
-
-Developer's answer: %s
-
-Does the answer demonstrate understanding of the code change? Consider:
-- Does it show they understand what the code does?
-- Do they recognize potential issues or edge cases?
-- Is the explanation accurate (even if brief)?
-
-Respond in this exact format:
-VERDICT: [PASS or FAIL]
-REASON: [one sentence explanation]
-
-Be strict but fair. A correct high-level understanding is acceptable even if not detailed.`, diff, question, answer)
+	prompt := gradePrompt(diff, question, answer, c.Language)
 
 	response, err := c.callAPI(prompt)
 	if err != nil {
@@ -227,6 +246,7 @@ func GetAPIKey(provider string) (string, error) {
 type OpenAIClient struct {
 	APIKey     string
 	Model      string
+	Language   string
 	BaseURL    string
 	HTTPClient *http.Client
 }
@@ -335,41 +355,13 @@ func (c *OpenAIClient) callAPI(prompt string) (string, error) {
 }
 
 func (c *OpenAIClient) GenerateQuestion(diff string) (string, error) {
-	prompt := fmt.Sprintf(`You are reviewing an AI-generated code change. Generate 1-2 short, specific questions that would test whether the developer understands this change.
-
-Focus on:
-- What the code does and why it's needed
-- Edge cases or potential issues
-- How it interacts with the rest of the system
-
-Code diff:
-%s
-
-Return only the questions, one per line. Keep questions concise and specific.`, diff)
+	prompt := questionPrompt(diff, c.Language)
 
 	return c.callAPI(prompt)
 }
 
 func (c *OpenAIClient) GradeAnswer(diff string, question string, answer string) (bool, string, error) {
-	prompt := fmt.Sprintf(`You are reviewing whether a developer understands an AI-generated code change.
-
-Code diff:
-%s
-
-Question asked: %s
-
-Developer's answer: %s
-
-Does the answer demonstrate understanding of the code change? Consider:
-- Does it show they understand what the code does?
-- Do they recognize potential issues or edge cases?
-- Is the explanation accurate (even if brief)?
-
-Respond in this exact format:
-VERDICT: [PASS or FAIL]
-REASON: [one sentence explanation]
-
-Be strict but fair. A correct high-level understanding is acceptable even if not detailed.`, diff, question, answer)
+	prompt := gradePrompt(diff, question, answer, c.Language)
 
 	response, err := c.callAPI(prompt)
 	if err != nil {
@@ -383,6 +375,7 @@ Be strict but fair. A correct high-level understanding is acceptable even if not
 type XAIClient struct {
 	APIKey     string
 	Model      string
+	Language   string
 	BaseURL    string
 	HTTPClient *http.Client
 }
@@ -470,41 +463,13 @@ func (c *XAIClient) callAPI(prompt string) (string, error) {
 }
 
 func (c *XAIClient) GenerateQuestion(diff string) (string, error) {
-	prompt := fmt.Sprintf(`You are reviewing an AI-generated code change. Generate 1-2 short, specific questions that would test whether the developer understands this change.
-
-Focus on:
-- What the code does and why it's needed
-- Edge cases or potential issues
-- How it interacts with the rest of the system
-
-Code diff:
-%s
-
-Return only the questions, one per line. Keep questions concise and specific.`, diff)
+	prompt := questionPrompt(diff, c.Language)
 
 	return c.callAPI(prompt)
 }
 
 func (c *XAIClient) GradeAnswer(diff string, question string, answer string) (bool, string, error) {
-	prompt := fmt.Sprintf(`You are reviewing whether a developer understands an AI-generated code change.
-
-Code diff:
-%s
-
-Question asked: %s
-
-Developer's answer: %s
-
-Does the answer demonstrate understanding of the code change? Consider:
-- Does it show they understand what the code does?
-- Do they recognize potential issues or edge cases?
-- Is the explanation accurate (even if brief)?
-
-Respond in this exact format:
-VERDICT: [PASS or FAIL]
-REASON: [one sentence explanation]
-
-Be strict but fair. A correct high-level understanding is acceptable even if not detailed.`, diff, question, answer)
+	prompt := gradePrompt(diff, question, answer, c.Language)
 
 	response, err := c.callAPI(prompt)
 	if err != nil {
@@ -515,7 +480,7 @@ Be strict but fair. A correct high-level understanding is acceptable even if not
 	return verdict, reason, nil
 }
 
-func NewClient(provider, model, baseURL string) (Client, error) {
+func NewClient(provider, model, baseURL, language string) (Client, error) {
 	apiKey, err := GetAPIKey(provider)
 	if err != nil {
 		return nil, err
@@ -523,11 +488,17 @@ func NewClient(provider, model, baseURL string) (Client, error) {
 
 	switch provider {
 	case "anthropic":
-		return NewAnthropicClient(apiKey, model), nil
+		c := NewAnthropicClient(apiKey, model)
+		c.Language = language
+		return c, nil
 	case "openai":
-		return NewOpenAIClient(apiKey, model, baseURL), nil
+		c := NewOpenAIClient(apiKey, model, baseURL)
+		c.Language = language
+		return c, nil
 	case "xai":
-		return NewXAIClient(apiKey, model, baseURL), nil
+		c := NewXAIClient(apiKey, model, baseURL)
+		c.Language = language
+		return c, nil
 	default:
 		return nil, fmt.Errorf("unknown provider: %s (supported: anthropic, openai, xai)", provider)
 	}

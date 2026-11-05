@@ -176,6 +176,39 @@ func TestGetVerifyModelPrecedence(t *testing.T) {
 	})
 }
 
+func TestGetVerifyLanguagePrecedence(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	repoRoot, _ := git.GetRepoRoot()
+	configPath := filepath.Join(repoRoot, ConfigFileName)
+
+	ResetCache()
+	if got := GetVerifyLanguage(); got != "English" {
+		t.Errorf("Expected default 'English', got %q", got)
+	}
+
+	data, _ := json.Marshal(Config{Verify: VerifyConfig{Language: "Japanese"}})
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(configPath)
+
+	ResetCache()
+	if got := GetVerifyLanguage(); got != "Japanese" {
+		t.Errorf("Expected repo config 'Japanese', got %q", got)
+	}
+
+	if err := exec.Command("git", "config", "ai-trail.verifyLanguage", "French").Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	ResetCache()
+	if got := GetVerifyLanguage(); got != "French" {
+		t.Errorf("Expected git config 'French', got %q", got)
+	}
+}
+
 func TestConfigSource(t *testing.T) {
 	_, cleanup := setupTestRepo(t)
 	defer cleanup()

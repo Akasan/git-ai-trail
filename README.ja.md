@@ -247,6 +247,13 @@ LLMとの対話的なQ&Aを通じて、AI帰属変更の理解度を検証しま
 
 **オプション:**
 - `--check`: 非対話チェックモード。未検証のAI変更が存在する場合、非ゼロで終了（CI/pre-pushフック用）
+- `--lang <言語>`: 生成される質問と採点フィードバックの言語（例: `Japanese`）。デフォルト: `English`
+
+**質問言語（優先順位順）:**
+1. `--lang` フラグ
+2. 個人設定: `git config ai-trail.verifyLanguage <言語>`
+3. チーム共有: `.git-ai-trail.json` の `"verify"` 内の `"language"`
+4. デフォルト: `English`
 
 **例:**
 ```bash
@@ -262,6 +269,10 @@ git ai-trail verify --check
 # 個人のプロバイダ/モデル設定（.git-ai-trail.json より優先）
 git config ai-trail.verifyProvider openai
 git config ai-trail.verifyModel gpt-6-luna
+
+# 日本語で質問する
+git ai-trail verify --lang Japanese
+git config ai-trail.verifyLanguage Japanese
 
 # BaseURL設定（セキュリティ上、git configまたは環境変数のみ、リポジトリファイルからは不可）
 git config ai-trail.verifyBaseURL "https://custom-endpoint.com/v1"

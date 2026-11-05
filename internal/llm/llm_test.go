@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -342,7 +343,7 @@ func TestNewClient(t *testing.T) {
 				os.Setenv(tt.envVar, "test-key")
 			}
 
-			client, err := NewClient(tt.provider, tt.model, tt.baseURL)
+			client, err := NewClient(tt.provider, tt.model, tt.baseURL, "")
 			
 			if tt.wantErr {
 				if err == nil {
@@ -355,6 +356,44 @@ func TestNewClient(t *testing.T) {
 				if client == nil {
 					t.Errorf("NewClient() returned nil client")
 				}
+			}
+		})
+	}
+}
+
+func TestGenerateQuestionLanguage(t *testing.T) {
+	tests := []struct {
+		name     string
+		language string
+		want     string
+	}{
+		{name: "default", language: "", want: "Write the questions in English."},
+		{name: "japanese", language: "Japanese", want: "Write the questions in Japanese."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var prompt string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req openaiRequest
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					t.Fatal(err)
+				}
+				prompt = req.Messages[0].Content
+				_ = json.NewEncoder(w).Encode(openaiResponse{
+					Choices: []openaiChoice{{Message: openaiMessage{Content: "Q?"}}},
+				})
+			}))
+			defer server.Close()
+
+			client := NewOpenAIClient("test-key", "gpt-4o", server.URL)
+			client.Language = tt.language
+
+			if _, err := client.GenerateQuestion("diff"); err != nil {
+				t.Fatalf("GenerateQuestion() error = %v", err)
+			}
+			if !strings.Contains(prompt, tt.want) {
+				t.Errorf("prompt missing %q:\n%s", tt.want, prompt)
 			}
 		})
 	}

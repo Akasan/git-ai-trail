@@ -546,3 +546,43 @@ func TestRecoveryFromSquashWithRealRebase(t *testing.T) {
 		t.Errorf("Expected --check to pass after verification, got: %v", err)
 	}
 }
+
+func TestVerifyLangFlag(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	initial := "initial.go"
+	if err := os.WriteFile(initial, []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "add", initial)
+	runCmd(t, ".", "git", "commit", "-m", "Initial")
+
+	testFile := "calc.go"
+	if err := os.WriteFile(testFile, []byte("package main\n\nfunc multiply(a, b int) int {\n    return a * b\n}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "add", testFile)
+	if err := commands.Mark([]string{"--model", "test", testFile}); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "commit", "-m", "Add multiply")
+	if err := commands.Record([]string{}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, args := range [][]string{
+		{"--lang", "Japanese", "--check", "HEAD~1..HEAD"},
+		{"--lang=Japanese", "--check", "HEAD~1..HEAD"},
+	} {
+		err := commands.VerifyWithClient(args, nil)
+		if err == nil || !strings.Contains(err.Error(), "unverified AI-attributed changes found") {
+			t.Errorf("VerifyWithClient(%v): expected unverified error, got %v", args, err)
+		}
+	}
+
+	err := commands.VerifyWithClient([]string{"--check", "--lang"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "--lang requires a value") {
+		t.Errorf("Expected missing value error, got %v", err)
+	}
+}
