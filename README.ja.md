@@ -120,13 +120,22 @@ git ai-trail record abc123
 
 ### `git ai-trail install-hooks`
 
-post-commitフックをインストールして、帰属を自動的に記録します。
+AI追跡を自動化するgitフックをインストールします:
+- **post-commit**: 各コミット後に帰属を自動記録
+- **pre-push**: 未検証のAI変更を含むpushをブロック
 
 ```bash
 git ai-trail install-hooks
 ```
 
+**post-commitフック:**
 インストール後は、コミット前に`git ai-trail mark`を実行するだけで済みます。帰属は自動的に記録されます。
+
+**pre-pushフック:**
+push前に`git ai-trail verify --check`を実行し、すべてのAI帰属変更が検証されていることを確認します。未検証変更が検出された場合、pushは拒否され、`git ai-trail verify`を実行するようメッセージが表示されます。
+
+**フックチェーン:**
+既にpost-commitまたはpre-pushフックがある場合、それらはバックアップ（`.backup`サフィックス）され、チェーン化されます（git-ai-trailフックの後に呼び出されます）。
 
 ### `git ai-trail blame <file>`
 
@@ -188,12 +197,128 @@ Total: 60 lines (45 ai, 3 ai-modified, 12 human) - 80.0% AI
 ### `git ai-trail init`
 
 AI追跡のためにリポジトリを初期化します。これにより以下が設定されます:
-- notesの書き換え設定（amend/rebaseで保持）
-- `refs/notes/ai-trail`のfetch refspec
+- `refs/notes/ai-trail`のnotesの書き換え設定（帰属notesはamend/rebaseで保持）
+- `refs/notes/ai-trail-verify`のnotesの書き換え設定（検証notesはコピーされますが再検証が必要）
+- 両方のnotes refsのfetch refspec
 
 ```bash
 git ai-trail init
 ```
+
+### `git ai-trail verify [<rev-range>]`
+
+LLMとの対話的なQ&Aを通じて、AI帰属変更の理解度を検証します。
+
+**概要:**
+- 未検証のAI帰属変更（`ai`または`ai-modified`行を含むhunk）をリスト表示
+- 各hunkについて、理解度をテストする1〜2問の質問を生成し、1問ずつ出題
+- 回答を採点し、結果を`refs/notes/ai-trail-verify`に記録
+- デフォルト範囲: 現在のブランチでupstream/mainに含まれないコミット
+
+**必要要件:**
+- 選択したプロバイダのAPIキー環境変数:
+  - `ANTHROPIC_API_KEY` Claude用（デフォルト）
+  - `OPENAI_API_KEY` GPT用
+  - `XAI_API_KEY` Grok用
+
+**プロバイダ＆モデル設定（優先順位順）:**
+1. 個人設定: `git config ai-trail.verifyProvider/verifyModel <値>`（最優先）
+2. チーム共有: リポジトリルートの `.git-ai-trail.json`
+3. デフォルト: `anthropic` / `claude-sonnet-4-5`
+
+サポートされているプロバイダ:
+- `anthropic`（デフォルト）: Claudeモデル、デフォルト `claude-sonnet-4-5` ([Messages API](https://docs.anthropic.com/en/api/messages))
+- `openai`: GPTモデル、デフォルト `gpt-6.1-sol` ([Chat Completions](https://platform.openai.com/docs/api-reference/chat), [GPT-6.1-sol](https://platform.openai.com/docs/models/gpt-6.1-sol))
+- `xai`: Grokモデル、デフォルト `grok-4.7` ([xAI API](https://docs.x.ai/), [Grok-4.7](https://docs.x.ai/docs/models/grok-4.7))
+
+プロバイダが指定されていない場合、モデル名から推論されます（`claude-*` → anthropic、`gpt-*`/`o1-*`/`o3-*` → openai、`grok-*` → xai）。
+
+チームで設定を共有するには、リポジトリルートに `.git-ai-trail.json` を作成します:
+```json
+{
+  "verify": {
+    "provider": "openai",
+    "model": "gpt-6.1-sol"
+  }
+}
+```
+
+**注意:** このファイルは作業ツリーから読み込まれるため、プルリクエストで検証プロバイダ/モデルを変更できます。`.git-ai-trail.json` の変更にレビューを必須にするため、CODEOWNERSの使用を検討してください。CIで使用される `--check` モードはLLMを呼び出さないため、プロバイダ/モデル変更は対話的な検証にのみ影響します。
+
+**オプション:**
+- `--check`: 非対話チェックモード。未検証のAI変更が存在する場合、非ゼロで終了（CI/pre-pushフック用）
+- `--lang <言語>`: 生成される質問と採点フィードバックの言語（例: `Japanese`）。デフォルト: `English`
+- `--exclude <パターン>`: パターンに一致するファイルのAI帰属変更を検証対象から除外。複数指定可
+
+**質問言語（優先順位順）:**
+1. `--lang` フラグ
+2. 個人設定: `git config ai-trail.verifyLanguage <言語>`
+3. チーム共有: `.git-ai-trail.json` の `"verify"` 内の `"language"`
+4. デフォルト: `English`
+
+**ファイルの除外:**
+
+以下のすべてのソースの除外パターンが合算されます:
+1. `--exclude` フラグ（複数指定可）
+2. 個人設定: `git config --add ai-trail.verifyExclude <パターン>`（複数値）
+3. チーム共有: `.git-ai-trail.json` の `"verify"` 内の `"exclude"` 配列
+
+```json
+{
+  "verify": {
+    "exclude": ["*.md", "vendor/", "docs/**/*.txt", "/generated.go"]
+  }
+}
+```
+
+パターンはリポジトリ相対パスに対してgitignore風にマッチします:
+- `/` を含まない（例: `*.md`、`testdata`）: 任意の階層のファイル名・ディレクトリ名に一致
+- 先頭または途中に `/` を含む（例: `/main.go`、`docs/*.md`）: リポジトリルート基準
+- 末尾が `/`（例: `vendor/`）: そのディレクトリ配下すべてに一致
+- `*` と `?` は `/` に一致しない。`**` はディレクトリをまたいで一致
+
+除外されたhunkは表示・検証されず、`--check` も通過します。除外されたhunk数はstderrに表示されます。
+
+**警告:** プロバイダ/モデルと異なり、除外パターンはCIの `--check` に**影響します**。プルリクエストで `.git-ai-trail.json` に `"exclude": ["**"]` を追加すると全ファイルの検証がスキップされます。CODEOWNERSで `.git-ai-trail.json` を保護してください。
+
+**例:**
+```bash
+# 現在のブランチの変更を検証（設定されたモデルを使用）
+git ai-trail verify
+
+# 特定のコミット範囲を検証
+git ai-trail verify main..HEAD
+
+# 未検証変更をチェック（CIで使用）
+git ai-trail verify --check
+
+# 個人のプロバイダ/モデル設定（.git-ai-trail.json より優先）
+git config ai-trail.verifyProvider openai
+git config ai-trail.verifyModel gpt-6-luna
+
+# 日本語で質問する
+git ai-trail verify --lang Japanese
+git config ai-trail.verifyLanguage Japanese
+
+# BaseURL設定（セキュリティ上、git configまたは環境変数のみ、リポジトリファイルからは不可）
+git config ai-trail.verifyBaseURL "https://custom-endpoint.com/v1"
+# または環境変数
+# export GIT_AI_TRAIL_BASE_URL="https://custom-endpoint.com/v1"
+```
+
+**対話フロー:**
+1. ツールがAI帰属コードhunkを表示
+2. LLMが変更についての質問を生成（1つの質問で問うのは1点のみ）
+3. 質問は1問ずつ表示（`Question 1/2` など）され、それぞれ自分の言葉で回答
+4. LLMが回答を1問ずつ採点（合否と理由）
+5. 不合格: その質問を再試行、またはhunkをスキップ
+6. hunkのすべての質問に合格: 全質問と回答とともに検証が記録される
+
+**検証ストレージ:**
+- git notes `refs/notes/ai-trail-verify` に保存
+- コミットハッシュ、ファイルパス、行範囲でキー化
+- **重要:** 検証はコミット固有であり、rebase/amendでは保持されません。コミットを書き換えた後は再検証が必要です
+- プッシュ方法: `git push origin refs/notes/ai-trail-verify`
 
 ## 帰属スキーマ
 
@@ -235,14 +360,15 @@ git ai-trail init
 
 ## チームとの共有
 
-AI帰属notesをプッシュしてチームと共有します:
+AI帰属と検証notesをプッシュしてチームと共有します:
 
 ```bash
-# notesをプッシュ
-git push origin refs/notes/ai-trail
+# 両方のnotes refsをプッシュ
+git push origin refs/notes/ai-trail refs/notes/ai-trail-verify
 
 # notesをプル
 git fetch origin refs/notes/ai-trail:refs/notes/ai-trail
+git fetch origin refs/notes/ai-trail-verify:refs/notes/ai-trail-verify
 ```
 
 `init`コマンドはfetchを自動的に設定します。チームメンバーは以下を実行する必要があります:
@@ -251,6 +377,61 @@ git fetch origin refs/notes/ai-trail:refs/notes/ai-trail
 git ai-trail init
 git fetch
 ```
+
+## CI統合
+
+CIで`git ai-trail verify --check`を使用して、検証を必須ステータスチェックとして強制します。
+
+**GitHub Actionsの例** (`examples/github-actions-verify.yml` を参照):
+
+```yaml
+name: Verify AI Changes
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch AI attribution notes
+        run: |
+          git fetch origin refs/notes/ai-trail:refs/notes/ai-trail || true
+          git fetch origin refs/notes/ai-trail-verify:refs/notes/ai-trail-verify || true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install git-ai-trail
+        run: go install github.com/Akasan/git-ai-trail@latest
+
+      - name: Verify AI changes
+        run: |
+          git ai-trail verify --check ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+```
+
+**必須チェックにする:**
+1. Settings → Branches → Branch protection rules for `main` に移動
+2. "Require status checks to pass" を有効化
+3. "verify" を必須チェックに追加
+
+**重要な注意事項:**
+- pre-pushフックはローカルでの保護を提供しますが、フックはバイパス可能なため、CIが最終的なゲートです。
+- **帰属notesが必要:** `refs/notes/ai-trail`がpushされていない場合、`verify --check`は検証なしで通過します（検証すべきAI帰属変更がないため）。両方のnotes refsをpushすることを確認してください。
+- フォークからのPR: フォークからの貢献者はupstreamリポジトリにnotesをpushできません。PRを開く前にローカルブランチで検証を要求するか、フォークPRは検証をスキップすることを受け入れてください。
+
+### 既知の制限事項
+
+- **Squash mergeでは帰属が失われる**: `git merge --squash`またはGitHubのsquash merge機能を使用すると、git notes（AI帰属を含む）は**保持されません**。結果のコミットには帰属notesが付かず、未検証のAIコードを含んでいても`--check`は通過します。
+  - **推奨**: 検証済みのAI変更を含むブランチには、squashの代わりにmerge commitまたはrebase mergeを使用してください。マージ**前**に必ずCIでPRブランチに対して`git ai-trail verify --check`を実行してください。
+- **対話的rebaseでのsquashはnotesを破損する**: `git rebase -i`でコミットをsquashすると、gitは複数のコミットのnotesを連結し、無効なJSONを作成します。これが発生した場合は、エラーメッセージに表示される復旧手順に従ってAI生成行を再帰属してください。
 
 ## エディタ/エージェント統合
 
@@ -368,11 +549,7 @@ git config ai-trail.fuzzyThreshold
 
 ### ロードマップ
 
-- [ ] **検証コマンド**: 作成者がAI変更を説明するまでCIでマージをブロック
-  ```bash
-  # 将来の機能
-  git ai-trail verify <commit> --explanation "OAuthフローをレビューして..."
-  ```
+- [x] **検証コマンド**: 作成者がAI変更を理解していることを証明するまでCIでマージをブロック
 - [ ] **ファジー行マッチング**: フォーマットされた/移動されたコードのより良い処理
 - [ ] **IDEプラグイン**: ネイティブCursor、VS Code、IntelliJ統合
 - [ ] **マージ競合解決**: スマートな帰属マージ

@@ -355,7 +355,8 @@ func TestStatusAndCommitRecordAgree(t *testing.T) {
 func runCmd(t *testing.T, dir string, name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Command %s %v failed: %v", name, args, err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("Command %s %v failed: %v\nOutput: %s", name, args, err, string(output))
 	}
 }
