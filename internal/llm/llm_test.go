@@ -389,12 +389,45 @@ func TestGenerateQuestionLanguage(t *testing.T) {
 			client := NewOpenAIClient("test-key", "gpt-4o", server.URL)
 			client.Language = tt.language
 
-			if _, err := client.GenerateQuestion("diff"); err != nil {
-				t.Fatalf("GenerateQuestion() error = %v", err)
+			if _, err := client.GenerateQuestions("diff"); err != nil {
+				t.Fatalf("GenerateQuestions() error = %v", err)
 			}
 			if !strings.Contains(prompt, tt.want) {
 				t.Errorf("prompt missing %q:\n%s", tt.want, prompt)
 			}
 		})
+	}
+}
+
+func TestParseQuestions(t *testing.T) {
+	tests := []struct {
+		name     string
+		response string
+		want     []string
+	}{
+		{"one per line", "What does it do?\nWhy is it needed?", []string{"What does it do?", "Why is it needed?"}},
+		{"blank lines", "\nWhat does it do?\n\n  Why?  \n", []string{"What does it do?", "Why?"}},
+		{"numbered", "1. What does it do?\n2) Why?", []string{"What does it do?", "Why?"}},
+		{"bullets", "- What?\n* Why?\n• How?", []string{"What?", "Why?", "How?"}},
+		{"Q prefix", "Q1: What?\nQuestion 2: Why?\nQ: How?", []string{"What?", "Why?", "How?"}},
+		{"markdown bold", "**1.** What?\n**Why?**", []string{"What?", "Why?"}},
+		{"japanese", "1．この関数は何をしますか？\nQ2：なぜ必要ですか？", []string{"この関数は何をしますか？", "なぜ必要ですか？"}},
+		{"leading number kept", "2 goroutines write here; what prevents a race?", []string{"2 goroutines write here; what prevents a race?"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseQuestions(tt.response)
+			if err != nil {
+				t.Fatalf("parseQuestions() error = %v", err)
+			}
+			if strings.Join(got, "|") != strings.Join(tt.want, "|") {
+				t.Errorf("parseQuestions() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	if _, err := parseQuestions(" \n\n"); err == nil {
+		t.Error("expected error for empty response")
 	}
 }

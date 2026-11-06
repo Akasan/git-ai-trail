@@ -211,7 +211,7 @@ Verify your understanding of AI-attributed changes through interactive Q&A with 
 
 **Overview:**
 - Lists unverified AI-attributed changes (hunks with `ai` or `ai-modified` lines)
-- For each hunk, generates 1-2 questions to test understanding
+- For each hunk, generates 1-2 questions to test understanding, asked one at a time
 - Grades your answers and records the results in `refs/notes/ai-trail-verify`
 - Default range: commits on current branch not in upstream/main
 
@@ -303,11 +303,11 @@ git config ai-trail.verifyLanguage Japanese
 
 **Interactive Flow:**
 1. Tool displays AI-attributed code hunk
-2. LLM generates questions about the change
-3. You answer in your own words
-4. LLM grades your answer (pass/fail with reason)
-5. On fail: retry or skip
-6. On pass: verification recorded
+2. LLM generates questions about the change (each question asks exactly one thing)
+3. Questions are shown one at a time (`Question 1/2`, ...); you answer each in your own words
+4. LLM grades each answer separately (pass/fail with reason)
+5. On fail: retry that question or skip the hunk
+6. When every question for the hunk passes: verification recorded with all questions and answers
 
 **Verification Storage:**
 - Stored in git notes `refs/notes/ai-trail-verify`

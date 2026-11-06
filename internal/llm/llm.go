@@ -7,12 +7,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
 
 type Client interface {
-	GenerateQuestion(diff string) (string, error)
+	GenerateQuestions(diff string) ([]string, error)
 	GradeAnswer(diff string, question string, answer string) (bool, string, error)
 }
 
@@ -33,7 +34,27 @@ Code diff:
 %s
 
 Write the questions in %s.
-Return only the questions, one per line. Keep questions concise and specific.`, diff, language)
+Each question must ask exactly one thing; if you want to ask about several points, write them as separate questions.
+Return only the questions, one question per line, with no numbering, bullets, or blank lines. Keep questions concise and specific.`, diff, language)
+}
+
+var questionPrefix = regexp.MustCompile(`^(?:[-*•]\s*|(?:Q(?:uestion)?\s*)?\d+\s*[.):．）：]\s*|Q(?:uestion)?\s*[:：]\s*)`)
+
+// parseQuestions splits an LLM response into individual questions, one per
+// non-empty line, stripping list markers the model may add anyway.
+func parseQuestions(response string) ([]string, error) {
+	var questions []string
+	for _, line := range strings.Split(response, "\n") {
+		line = strings.Trim(strings.TrimSpace(line), "* ")
+		line = strings.Trim(questionPrefix.ReplaceAllString(line, ""), "* ")
+		if line != "" {
+			questions = append(questions, line)
+		}
+	}
+	if len(questions) == 0 {
+		return nil, fmt.Errorf("no questions in response")
+	}
+	return questions, nil
 }
 
 func gradePrompt(diff, question, answer, language string) string {
@@ -170,10 +191,12 @@ func (c *AnthropicClient) callAPI(prompt string) (string, error) {
 	return text, nil
 }
 
-func (c *AnthropicClient) GenerateQuestion(diff string) (string, error) {
-	prompt := questionPrompt(diff, c.Language)
-
-	return c.callAPI(prompt)
+func (c *AnthropicClient) GenerateQuestions(diff string) ([]string, error) {
+	response, err := c.callAPI(questionPrompt(diff, c.Language))
+	if err != nil {
+		return nil, err
+	}
+	return parseQuestions(response)
 }
 
 func (c *AnthropicClient) GradeAnswer(diff string, question string, answer string) (bool, string, error) {
@@ -354,10 +377,12 @@ func (c *OpenAIClient) callAPI(prompt string) (string, error) {
 	return content, nil
 }
 
-func (c *OpenAIClient) GenerateQuestion(diff string) (string, error) {
-	prompt := questionPrompt(diff, c.Language)
-
-	return c.callAPI(prompt)
+func (c *OpenAIClient) GenerateQuestions(diff string) ([]string, error) {
+	response, err := c.callAPI(questionPrompt(diff, c.Language))
+	if err != nil {
+		return nil, err
+	}
+	return parseQuestions(response)
 }
 
 func (c *OpenAIClient) GradeAnswer(diff string, question string, answer string) (bool, string, error) {
@@ -462,10 +487,12 @@ func (c *XAIClient) callAPI(prompt string) (string, error) {
 	return content, nil
 }
 
-func (c *XAIClient) GenerateQuestion(diff string) (string, error) {
-	prompt := questionPrompt(diff, c.Language)
-
-	return c.callAPI(prompt)
+func (c *XAIClient) GenerateQuestions(diff string) ([]string, error) {
+	response, err := c.callAPI(questionPrompt(diff, c.Language))
+	if err != nil {
+		return nil, err
+	}
+	return parseQuestions(response)
 }
 
 func (c *XAIClient) GradeAnswer(diff string, question string, answer string) (bool, string, error) {
@@ -518,11 +545,11 @@ func NewFakeClient() *FakeClient {
 	}
 }
 
-func (f *FakeClient) GenerateQuestion(diff string) (string, error) {
+func (f *FakeClient) GenerateQuestions(diff string) ([]string, error) {
 	if q, ok := f.Questions[diff]; ok {
-		return q, nil
+		return parseQuestions(q)
 	}
-	return "What does this code do?", nil
+	return []string{"What does this code do?"}, nil
 }
 
 func (f *FakeClient) GradeAnswer(diff string, question string, answer string) (bool, string, error) {

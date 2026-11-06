@@ -25,14 +25,24 @@ type VerificationRecord struct {
 }
 
 type HunkVerifyInfo struct {
-	HunkID    string `json:"hunk_id"`
-	Question  string `json:"question"`
-	Answer    string `json:"answer"`
-	Verdict   bool   `json:"verdict"`
-	Reason    string `json:"reason"`
-	Timestamp string `json:"timestamp"`
-	Verifier  string `json:"verifier"`
-	Model     string `json:"model"`
+	HunkID    string           `json:"hunk_id"`
+	Questions []QuestionResult `json:"questions,omitempty"`
+	Verdict   bool             `json:"verdict"`
+	Timestamp string           `json:"timestamp"`
+	Verifier  string           `json:"verifier"`
+	Model     string           `json:"model"`
+
+	// Schema v1 stored a single question per hunk. Kept so that rewriting a
+	// note does not drop earlier entries' content.
+	Question string `json:"question,omitempty"`
+	Answer   string `json:"answer,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+type QuestionResult struct {
+	Question string `json:"question"`
+	Answer   string `json:"answer"`
+	Reason   string `json:"reason"`
 }
 
 type Hunk struct {
@@ -235,72 +245,28 @@ func VerifyWithClient(args []string, client llm.Client) error {
 		}
 		fmt.Println()
 
-		fmt.Println("Generating question...")
-		question, err := client.GenerateQuestion(hunk.Diff())
+		fmt.Println("Generating questions...")
+		questions, err := client.GenerateQuestions(hunk.Diff())
 		if err != nil {
-			return fmt.Errorf("failed to generate question: %w", err)
+			return fmt.Errorf("failed to generate questions: %w", err)
 		}
 
-		fmt.Printf("\nQuestion:\n%s\n\n", question)
+		results, outcome, err := askQuestions(reader, client, hunk.Diff(), questions)
+		if err != nil {
+			return err
+		}
 
-		var answer string
-		var verdict bool
-		var reason string
-		for {
-			fmt.Print("Your answer (or 'skip' to skip, 'quit' to exit): ")
-			answer, err = reader.ReadString('\n')
-			if err != nil {
-				return fmt.Errorf("failed to read answer: %w", err)
+		switch outcome {
+		case outcomeQuit:
+			fmt.Printf("\nExiting verification (%d/%d hunks verified)\n", verifiedCount, len(hunks))
+			return fmt.Errorf("verification incomplete: %d unverified hunk(s) remain", len(hunks)-verifiedCount)
+		case outcomeSkip:
+			fmt.Println("Skipping this hunk")
+		case outcomePass:
+			if err := saveVerification(hunk, results, verifier, model); err != nil {
+				return fmt.Errorf("failed to save verification: %w", err)
 			}
-
-			answer = strings.TrimSpace(answer)
-
-			if answer == "quit" {
-				fmt.Printf("\nExiting verification (%d/%d hunks verified)\n", verifiedCount, len(hunks))
-				return fmt.Errorf("verification incomplete: %d unverified hunk(s) remain", len(hunks)-verifiedCount)
-			}
-
-			if answer == "skip" {
-				fmt.Println("Skipping this hunk")
-				break
-			}
-
-			if answer == "" {
-				fmt.Println("Please provide an answer, or type 'skip' to skip")
-				continue
-			}
-
-			fmt.Println("\nGrading answer...")
-			verdict, reason, err = client.GradeAnswer(hunk.Diff(), question, answer)
-			if err != nil {
-				return fmt.Errorf("failed to grade answer: %w", err)
-			}
-
-			if verdict {
-				fmt.Printf("✓ PASS: %s\n\n", reason)
-				if err := saveVerification(hunk, question, answer, verdict, reason, verifier, model); err != nil {
-					return fmt.Errorf("failed to save verification: %w", err)
-				}
-				verifiedCount++
-				break
-			} else {
-				fmt.Printf("✗ FAIL: %s\n\n", reason)
-				fmt.Println("Would you like to:")
-				fmt.Println("  1. Try again")
-				fmt.Println("  2. Skip this hunk")
-				fmt.Print("Choice (1/2): ")
-
-				choice, err := reader.ReadString('\n')
-				if err != nil {
-					return fmt.Errorf("failed to read choice: %w", err)
-				}
-				choice = strings.TrimSpace(choice)
-
-				if choice == "2" {
-					fmt.Println("Skipping this hunk")
-					break
-				}
-			}
+			verifiedCount++
 		}
 	}
 
@@ -311,6 +277,77 @@ func VerifyWithClient(args []string, client llm.Client) error {
 
 	fmt.Println("\nVerification complete: all hunks verified")
 	return nil
+}
+
+type questionOutcome int
+
+const (
+	outcomePass questionOutcome = iota
+	outcomeSkip
+	outcomeQuit
+)
+
+// askQuestions asks each question on its own and grades each answer
+// separately. The hunk passes only when every question passes.
+func askQuestions(reader *bufio.Reader, client llm.Client, diff string, questions []string) ([]QuestionResult, questionOutcome, error) {
+	var results []QuestionResult
+
+	for i, question := range questions {
+		fmt.Printf("\nQuestion %d/%d:\n%s\n\n", i+1, len(questions), question)
+
+		for {
+			fmt.Print("Your answer (or 'skip' to skip this hunk, 'quit' to exit): ")
+			answer, err := reader.ReadString('\n')
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to read answer: %w", err)
+			}
+
+			answer = strings.TrimSpace(answer)
+
+			if answer == "quit" {
+				return nil, outcomeQuit, nil
+			}
+
+			if answer == "skip" {
+				return nil, outcomeSkip, nil
+			}
+
+			if answer == "" {
+				fmt.Println("Please provide an answer, or type 'skip' to skip")
+				continue
+			}
+
+			fmt.Println("\nGrading answer...")
+			verdict, reason, err := client.GradeAnswer(diff, question, answer)
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to grade answer: %w", err)
+			}
+
+			if verdict {
+				fmt.Printf("✓ PASS: %s\n", reason)
+				results = append(results, QuestionResult{Question: question, Answer: answer, Reason: reason})
+				break
+			}
+
+			fmt.Printf("✗ FAIL: %s\n\n", reason)
+			fmt.Println("Would you like to:")
+			fmt.Println("  1. Try again")
+			fmt.Println("  2. Skip this hunk")
+			fmt.Print("Choice (1/2): ")
+
+			choice, err := reader.ReadString('\n')
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to read choice: %w", err)
+			}
+
+			if strings.TrimSpace(choice) == "2" {
+				return nil, outcomeSkip, nil
+			}
+		}
+	}
+
+	fmt.Println()
+	return results, outcomePass, nil
 }
 
 func getCommitsInRange(revArgs ...string) ([]string, error) {
@@ -535,21 +572,19 @@ func mergeAdjacentRanges(ranges []notes.LineRange) []notes.LineRange {
 	return merged
 }
 
-func saveVerification(hunk Hunk, question, answer string, verdict bool, reason, verifier, model string) error {
+func saveVerification(hunk Hunk, results []QuestionResult, verifier, model string) error {
 	record, err := loadVerificationRecord(hunk.CommitHash)
 	if err != nil {
 		record = &VerificationRecord{
-			SchemaVersion: 1,
 			Verifications: make(map[string]HunkVerifyInfo),
 		}
 	}
+	record.SchemaVersion = 2
 
 	record.Verifications[hunk.ID()] = HunkVerifyInfo{
 		HunkID:    hunk.ID(),
-		Question:  question,
-		Answer:    answer,
-		Verdict:   verdict,
-		Reason:    reason,
+		Questions: results,
+		Verdict:   true,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Verifier:  verifier,
 		Model:     model,

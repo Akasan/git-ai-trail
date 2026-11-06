@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -653,4 +654,144 @@ func TestVerifyExclude(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "--exclude requires a pattern") {
 		t.Errorf("Expected missing pattern error, got %v", err)
 	}
+}
+
+func TestVerifyAsksQuestionsOneAtATime(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	initial := "initial.go"
+	if err := os.WriteFile(initial, []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "add", initial)
+	runCmd(t, ".", "git", "commit", "-m", "Initial")
+
+	testFile := "calc.go"
+	if err := os.WriteFile(testFile, []byte("package main\n\nfunc multiply(a, b int) int {\n    return a * b\n}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "add", testFile)
+	if err := commands.Mark([]string{"--model", "test", testFile}); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "commit", "-m", "Add multiply")
+	if err := commands.Record([]string{}); err != nil {
+		t.Fatal(err)
+	}
+	commit, _ := git.GetLastCommit()
+
+	client := &questionsClient{FakeClient: llm.NewFakeClient(), questions: []string{"What does multiply return?", "What happens on overflow?"}}
+
+	oldStdin := os.Stdin
+	r, w, _ := os.Pipe()
+	os.Stdin = r
+	go func() {
+		_, _ = w.Write([]byte("The product of a and b\n"))
+		_, _ = w.Write([]byte("banana\n"))
+		_, _ = w.Write([]byte("1\n"))
+		_, _ = w.Write([]byte("It wraps around silently\n"))
+		w.Close()
+	}()
+
+	err := commands.VerifyWithClient([]string{"HEAD~1..HEAD"}, client)
+	os.Stdin = oldStdin
+	if err != nil {
+		t.Fatalf("Verify failed: %v", err)
+	}
+
+	want := [][2]string{
+		{"What does multiply return?", "The product of a and b"},
+		{"What happens on overflow?", "banana"},
+		{"What happens on overflow?", "It wraps around silently"},
+	}
+	if len(client.graded) != len(want) {
+		t.Fatalf("Expected %d grading calls, got %d: %v", len(want), len(client.graded), client.graded)
+	}
+	for i := range want {
+		if client.graded[i] != want[i] {
+			t.Errorf("grading call %d: got %v, want %v", i, client.graded[i], want[i])
+		}
+	}
+
+	note, err := git.GetNote(commands.VerifyNotesRef, commit)
+	if err != nil {
+		t.Fatalf("No verification note found: %v", err)
+	}
+	var record commands.VerificationRecord
+	if err := json.Unmarshal([]byte(note), &record); err != nil {
+		t.Fatal(err)
+	}
+	if len(record.Verifications) != 1 {
+		t.Fatalf("Expected 1 verification, got %d", len(record.Verifications))
+	}
+	for _, info := range record.Verifications {
+		if len(info.Questions) != 2 {
+			t.Fatalf("Expected 2 recorded questions, got %d", len(info.Questions))
+		}
+		if info.Questions[1].Answer != "It wraps around silently" {
+			t.Errorf("Expected passing answer recorded, got %q", info.Questions[1].Answer)
+		}
+	}
+}
+
+func TestVerifySkipOnLaterQuestionLeavesHunkUnverified(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	initial := "initial.go"
+	if err := os.WriteFile(initial, []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "add", initial)
+	runCmd(t, ".", "git", "commit", "-m", "Initial")
+
+	testFile := "calc.go"
+	if err := os.WriteFile(testFile, []byte("package main\n\nfunc multiply(a, b int) int {\n    return a * b\n}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "add", testFile)
+	if err := commands.Mark([]string{"--model", "test", testFile}); err != nil {
+		t.Fatal(err)
+	}
+	runCmd(t, ".", "git", "commit", "-m", "Add multiply")
+	if err := commands.Record([]string{}); err != nil {
+		t.Fatal(err)
+	}
+
+	client := &questionsClient{FakeClient: llm.NewFakeClient(), questions: []string{"Q one?", "Q two?"}}
+
+	oldStdin := os.Stdin
+	r, w, _ := os.Pipe()
+	os.Stdin = r
+	go func() {
+		_, _ = w.Write([]byte("Correct answer\n"))
+		_, _ = w.Write([]byte("skip\n"))
+		w.Close()
+	}()
+
+	err := commands.VerifyWithClient([]string{"HEAD~1..HEAD"}, client)
+	os.Stdin = oldStdin
+	if err == nil {
+		t.Fatal("Expected error when a hunk is skipped")
+	}
+
+	if err := commands.VerifyWithClient([]string{"--check", "HEAD~1..HEAD"}, nil); err == nil {
+		t.Error("Expected --check to fail: hunk skipped on second question must stay unverified")
+	}
+}
+
+type questionsClient struct {
+	*llm.FakeClient
+	questions []string
+	graded    [][2]string
+}
+
+func (c *questionsClient) GenerateQuestions(diff string) ([]string, error) {
+	return c.questions, nil
+}
+
+func (c *questionsClient) GradeAnswer(diff, question, answer string) (bool, string, error) {
+	c.graded = append(c.graded, [2]string{question, answer})
+	return c.FakeClient.GradeAnswer(diff, question, answer)
 }
